@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin · Office Cleaning</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="top">
+  <h1>🧹 Office Cleaning · Admin</h1>
+  <nav>
+    <a href="index.html">Book</a>
+    <a href="admin.html" class="active">Admin</a>
+  </nav>
+</header>
+
+<main>
+  <div class="success-banner" id="saveBanner">Prices updated.</div>
+
+  <h2 style="font-size:15px; color:var(--text-dim); font-weight:600; margin:0 0 12px;">Requests</h2>
+  <div class="orders-list" id="ordersList"></div>
+
+  <h2 style="font-size:15px; color:var(--text-dim); font-weight:600; margin:0 0 12px;">Pricing</h2>
+  <div id="pricingBlocks"></div>
+  <div class="save-row">
+    <button class="btn secondary small" id="resetBtn">Reset to defaults</button>
+    <button class="btn small" id="saveBtn">Save Prices</button>
+  </div>
+</main>
+
+<script src="config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

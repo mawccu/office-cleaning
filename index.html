@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Book a Cleaning</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="top">
+  <h1>🧹 Office Cleaning</h1>
+  <nav>
+    <a href="index.html" class="active">Book</a>
+    <a href="admin.html">Admin</a>
+  </nav>
+</header>
+
+<main>
+  <div class="success-banner" id="successBanner">Request sent! It now shows up in the admin account.</div>
+
+  <div class="office-tabs" id="officeTabs"></div>
+  <div class="room-grid" id="roomGrid"></div>
+</main>
+
+<div class="summary-bar">
+  <div class="summary-inner">
+    <div class="summary-text" id="summaryText">Select rooms to clean</div>
+    <div style="display:flex; align-items:center; gap:18px;">
+      <div class="summary-total"><span>Total</span>$<span id="totalPrice">0</span></div>
+      <button class="btn" id="confirmBtn" disabled>Review &amp; Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="modalOverlay">
+  <div class="modal">
+    <h2 id="modalOfficeName"></h2>
+    <div class="sub">Confirm this cleaning request</div>
+    <div id="modalLines"></div>
+    <div class="modal-total"><span>Total</span><span id="modalTotal">$0</span></div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="cancelBtn">Cancel</button>
+      <button class="btn" id="submitBtn">Confirm Request</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
