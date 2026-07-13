@@ -108,10 +108,13 @@ function renderFloorPlan() {
     })
     .join("");
 
+  const [, , vbw, vbh] = layout.viewBox.split(" ").map(Number);
   floorPlanWrapEl.innerHTML = `
-    <svg class="floorplan-svg" viewBox="${layout.viewBox}" preserveAspectRatio="xMidYMid meet">
-      ${shapesHtml}
-    </svg>`;
+    <div class="floorplan-frame" style="aspect-ratio:${vbw}/${vbh}">
+      <svg class="floorplan-svg" viewBox="${layout.viewBox}" preserveAspectRatio="xMidYMid meet">
+        ${shapesHtml}
+      </svg>
+    </div>`;
 
   floorPlanWrapEl.querySelectorAll(".room-shape").forEach((el) => {
     el.addEventListener("click", () => toggleRoom(el.dataset.room));
