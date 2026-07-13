@@ -51,27 +51,59 @@ function setTier(officeId, roomId, tierId) {
 }
 
 // Renders ONE combined map (FLOOR_PLAN) — both offices in the same
-// coordinate space, exactly as laid out in the reference image.
+// coordinate space, exactly as laid out in the reference image, drawn as
+// one continuous building: room fills first, then real walls (with door
+// gaps cut out) on top, then a highlight outline for anything selected,
+// then labels on top of everything. Sharp corners throughout — no rounded
+// boxes floating apart from each other.
+function wallSegmentPaths(wall) {
+  const horizontal = wall.y1 === wall.y2;
+  if (!wall.doorGap) {
+    return [`M${wall.x1},${wall.y1} L${wall.x2},${wall.y2}`];
+  }
+  const [gapStart, gapEnd] = wall.doorGap;
+  if (horizontal) {
+    const y = wall.y1;
+    const lo = Math.min(wall.x1, wall.x2);
+    const hi = Math.max(wall.x1, wall.x2);
+    return [`M${lo},${y} L${gapStart},${y}`, `M${gapEnd},${y} L${hi},${y}`];
+  }
+  const x = wall.x1;
+  const lo = Math.min(wall.y1, wall.y2);
+  const hi = Math.max(wall.y1, wall.y2);
+  return [`M${x},${lo} L${x},${gapStart}`, `M${x},${gapEnd} L${x},${hi}`];
+}
+
 function renderFloorPlan() {
-  const shapesHtml = FLOOR_PLAN.shapes
+  const fillsHtml = FLOOR_PLAN.shapes
+    .map((s) => {
+      const selected = !!selections[s.officeId][s.id];
+      return `<rect class="room-fill office-${s.officeId} ${selected ? "selected" : ""}" data-office="${s.officeId}" data-room="${s.id}" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}"></rect>`;
+    })
+    .join("");
+
+  const wallsHtml = (FLOOR_PLAN.walls || [])
+    .flatMap(wallSegmentPaths)
+    .map((d) => `<path class="wall-line" d="${d}"></path>`)
+    .join("");
+
+  const outlinesHtml = FLOOR_PLAN.shapes
+    .filter((s) => selections[s.officeId][s.id])
+    .map((s) => `<rect class="room-selected-outline" x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}"></rect>`)
+    .join("");
+
+  const labelsHtml = FLOOR_PLAN.shapes
+    .filter((s) => s.label !== false)
     .map((s) => {
       const selected = !!selections[s.officeId][s.id];
       const cx = s.x + s.w / 2;
       const cy = s.y + s.h / 2;
-      const showLabel = s.label !== false;
       const priceTag = selected
         ? `$${priceFor(s.officeId, s.id, selections[s.officeId][s.id])} · ${tierLabel(selections[s.officeId][s.id])}`
         : "tap to select";
-      const text = showLabel
-        ? `
-          <text class="room-label" x="${cx}" y="${cy - 6}" text-anchor="middle">${roomName(s.officeId, s.id)}</text>
-          <text class="room-price-tag" x="${cx}" y="${cy + 14}" text-anchor="middle">${priceTag}</text>`
-        : "";
       return `
-        <g class="room-shape office-${s.officeId} ${selected ? "selected" : ""}" data-office="${s.officeId}" data-room="${s.id}">
-          <rect x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="8"></rect>
-          ${text}
-        </g>`;
+        <text class="room-label ${selected ? "selected" : ""}" x="${cx}" y="${cy - 6}" text-anchor="middle">${roomName(s.officeId, s.id)}</text>
+        <text class="room-price-tag ${selected ? "selected" : ""}" x="${cx}" y="${cy + 14}" text-anchor="middle">${priceTag}</text>`;
     })
     .join("");
 
@@ -79,14 +111,17 @@ function renderFloorPlan() {
   floorPlanWrapEl.innerHTML = `
     <div class="floorplan-frame" style="aspect-ratio:${vbw}/${vbh}">
       <svg class="floorplan-svg" viewBox="${FLOOR_PLAN.viewBox}" preserveAspectRatio="xMidYMid meet">
-        ${shapesHtml}
+        <g class="room-fills">${fillsHtml}</g>
+        <g class="walls">${wallsHtml}</g>
+        <g class="selected-outlines">${outlinesHtml}</g>
+        <g class="room-labels">${labelsHtml}</g>
       </svg>
     </div>
     <div class="floorplan-legend">
       ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${offices[id].label}</div>`).join("")}
     </div>`;
 
-  floorPlanWrapEl.querySelectorAll(".room-shape").forEach((el) => {
+  floorPlanWrapEl.querySelectorAll(".room-fill").forEach((el) => {
     el.addEventListener("click", () => toggleRoom(el.dataset.office, el.dataset.room));
   });
 }

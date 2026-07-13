@@ -446,51 +446,68 @@ table.price-table tr:last-child td { border-bottom: none; }
   .floorplan-frame { max-height: 75vh; }
 }
 
-.room-shape rect {
+/* One continuous building: fills, then real walls (with door gaps) drawn
+   on top, then a highlight outline for selected rooms, then labels. No
+   rounded corners, no per-room border — the wall layer is what defines the
+   edges, exactly like the reference floor plan. */
+.room-fill {
   fill: var(--panel-2);
-  stroke: var(--border);
-  stroke-width: 2;
   cursor: pointer;
-  transition: fill .15s, stroke .15s;
+  transition: fill .15s;
 }
 
-.room-shape.office-moha rect { stroke: rgba(185, 155, 107, 0.55); }
-.room-shape.office-malek rect { stroke: rgba(255, 77, 77, 0.55); }
+.room-fill.office-moha { fill: rgba(185, 155, 107, 0.09); }
+.room-fill.office-malek { fill: rgba(255, 77, 77, 0.07); }
 
-.room-shape:hover rect {
-  stroke: var(--accent-dim);
+.room-fill:hover {
+  fill: rgba(79, 140, 255, 0.10);
 }
 
-.room-shape.selected rect {
-  fill: rgba(79, 140, 255, 0.22);
+.room-fill.selected {
+  fill: rgba(79, 140, 255, 0.24);
+}
+
+.wall-line {
+  fill: none;
+  stroke: var(--text-dim);
+  stroke-width: 5;
+  stroke-linecap: square;
+  pointer-events: none;
+}
+
+.room-selected-outline {
+  fill: none;
   stroke: var(--accent);
-  stroke-width: 3;
+  stroke-width: 4;
+  pointer-events: none;
 }
 
 .legend-item .swatch.office-moha { background: var(--moha); }
 .legend-item .swatch.office-malek { background: var(--malek); }
 
-.room-shape text {
+.room-label,
+.room-price-tag {
   pointer-events: none;
   fill: var(--text);
+  text-anchor: middle;
 }
 
-.room-shape .room-label {
+.room-label {
   font-size: 24px;
   font-weight: 700;
 }
 
-.room-shape .room-price-tag {
+.room-price-tag {
   font-size: 16px;
   fill: var(--text-dim);
 }
 
 @media (min-width: 640px) {
-  .room-shape .room-label { font-size: 17px; }
-  .room-shape .room-price-tag { font-size: 12px; }
+  .room-label { font-size: 17px; }
+  .room-price-tag { font-size: 12px; }
 }
 
-.room-shape.selected .room-price-tag {
+.room-price-tag.selected {
   fill: var(--accent);
   font-weight: 700;
 }

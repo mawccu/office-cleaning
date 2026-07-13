@@ -56,6 +56,39 @@ const FLOOR_PLAN = {
     { officeId: "malek", id: "dishwashing", x: 1249, y: 460, w: 140, h: 205 },
     { officeId: "malek", id: "bathroom", x: 1490, y: 460, w: 110, h: 205 },
   ],
+  // Real architectural walls, drawn as one continuous line layer on top of
+  // the room fills so the whole thing reads as one building instead of a
+  // pile of separate boxes. Each wall is a straight segment; doorGap cuts an
+  // opening out of it (an [start, end] range along the segment's long axis).
+  walls: [
+    // --- Moha's Office exterior ---
+    { x1: 430, y1: 50, x2: 954, y2: 50 },
+    { x1: 954, y1: 50, x2: 954, y2: 475 },
+    { x1: 954, y1: 475, x2: 1094, y2: 475 },
+    { x1: 1094, y1: 475, x2: 1094, y2: 1027 },
+    { x1: 1094, y1: 1027, x2: 656, y2: 1027 },
+    { x1: 656, y1: 1027, x2: 656, y2: 289 },
+    { x1: 656, y1: 289, x2: 430, y2: 289 },
+    { x1: 430, y1: 289, x2: 430, y2: 50 },
+    // Hall -> Desks doorway
+    { x1: 656, y1: 532, x2: 954, y2: 532, doorGap: [705, 795] },
+    // Bathroom walls (door on the hall-facing side)
+    { x1: 954, y1: 475, x2: 954, y2: 761, doorGap: [495, 565] },
+    { x1: 954, y1: 761, x2: 1094, y2: 761 },
+
+    // --- Malek's Office exterior ---
+    { x1: 976, y1: 118, x2: 1621, y2: 118 },
+    { x1: 1621, y1: 118, x2: 1621, y2: 1027 },
+    { x1: 1621, y1: 1027, x2: 1115, y2: 1027 },
+    { x1: 1115, y1: 1027, x2: 1115, y2: 460 },
+    { x1: 1115, y1: 460, x2: 976, y2: 460 },
+    { x1: 976, y1: 460, x2: 976, y2: 118 },
+    // Kitchen / Storage divider
+    { x1: 1281, y1: 118, x2: 1281, y2: 460 },
+    // Same wall continues down through Desks, with a doorway right where it
+    // meets the Dishwashing Area threshold.
+    { x1: 1281, y1: 665, x2: 1281, y2: 1027, doorGap: [665, 775] },
+  ],
 };
 
 // Default price per room per tier ($)
