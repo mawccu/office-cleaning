@@ -30,6 +30,7 @@ function renderPricing() {
 
     block.innerHTML = `
       <h3>${office.label}</h3>
+      <div class="table-scroll">
       <table class="price-table">
         <thead>
           <tr>
@@ -39,6 +40,7 @@ function renderPricing() {
         </thead>
         <tbody>${rows}</tbody>
       </table>
+      </div>
     `;
     pricingBlocksEl.appendChild(block);
   });
