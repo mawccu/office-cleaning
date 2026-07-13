@@ -446,70 +446,82 @@ table.price-table tr:last-child td { border-bottom: none; }
   .floorplan-frame { max-height: 75vh; }
 }
 
-/* One continuous building: fills, then real walls (with door gaps) drawn
-   on top, then a highlight outline for selected rooms, then labels. No
-   rounded corners, no per-room border — the wall layer is what defines the
-   edges, exactly like the reference floor plan. */
-.room-fill {
-  fill: var(--panel-2);
-  cursor: pointer;
-  transition: fill .15s;
+/* Isometric dollhouse model.
+   Each room is an extruded slab: bright top face (the floor), a mid-tone
+   south face and a darker east face, one coherent light source from the
+   upper left. Real walls stand on the slab in near-white so the plan
+   reads like crisp architectural linework; door gaps stay open. Selecting
+   a room lifts its slab out of the model and shifts it to the accent. */
+
+.ground-shadow polygon { fill: #000; }
+.ground-shadow { opacity: 0.4; }
+
+.plate { cursor: pointer; }
+.plate polygon { transition: fill .25s ease; }
+
+/* Moha's office: warm sand */
+.plate.office-moha .f-top   { fill: #c9b38d; stroke: #c9b38d; }
+.plate.office-moha .f-south { fill: #a08b69; stroke: #a08b69; }
+.plate.office-moha .f-east  { fill: #7c6b50; stroke: #7c6b50; }
+
+/* Malek's office: muted clay */
+.plate.office-malek .f-top   { fill: #c98f87; stroke: #c98f87; }
+.plate.office-malek .f-south { fill: #a06d66; stroke: #a06d66; }
+.plate.office-malek .f-east  { fill: #7c534d; stroke: #7c534d; }
+
+.plate polygon { stroke-width: 1; stroke-linejoin: round; }
+
+@media (hover: hover) {
+  .plate:not(.selected):hover .f-top { filter: brightness(1.08); }
 }
 
-.room-fill.office-moha { fill: rgba(185, 155, 107, 0.09); }
-.room-fill.office-malek { fill: rgba(255, 77, 77, 0.07); }
+/* Wall-less zones (marked only by door frames in the reference) sit as
+   slightly raised, slightly lighter platforms on their room's slab */
+.plate.office-malek.pad .f-top   { fill: #d6a89f; stroke: #d6a89f; }
+.plate.office-malek.pad .f-south { fill: #b1837b; stroke: #b1837b; }
+.plate.office-malek.pad .f-east  { fill: #8e645d; stroke: #8e645d; }
 
-.room-fill:hover {
-  fill: rgba(79, 140, 255, 0.10);
-}
+/* Selected: the slab rises and turns a confident soft blue */
+.plate.selected .f-top,   .plate.pad.selected .f-top   { fill: #7da2f5; stroke: #7da2f5; }
+.plate.selected .f-south, .plate.pad.selected .f-south { fill: #5b7bd1; stroke: #5b7bd1; }
+.plate.selected .f-east,  .plate.pad.selected .f-east  { fill: #435da6; stroke: #435da6; }
 
-.room-fill.selected {
-  fill: rgba(79, 140, 255, 0.24);
-}
+/* Walls: light, crisp, architectural */
+.wallbox polygon { stroke-width: 1; stroke-linejoin: round; pointer-events: none; }
+.wallbox .w-top   { fill: #edf0f6; stroke: #edf0f6; }
+.wallbox .w-south { fill: #b9c0ce; stroke: #b9c0ce; }
+.wallbox .w-east  { fill: #878fa1; stroke: #878fa1; }
 
-.wall-line {
-  fill: none;
-  stroke: var(--text-dim);
-  stroke-width: 5;
-  stroke-linecap: square;
-  pointer-events: none;
-}
+.legend-item .swatch.office-moha { background: #c9b38d; }
+.legend-item .swatch.office-malek { background: #c98f87; }
 
-.room-selected-outline {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 4;
-  pointer-events: none;
-}
-
-.legend-item .swatch.office-moha { background: var(--moha); }
-.legend-item .swatch.office-malek { background: var(--malek); }
+.room-label-g { pointer-events: none; }
 
 .room-label,
 .room-price-tag {
-  pointer-events: none;
-  fill: var(--text);
   text-anchor: middle;
+  user-select: none;
 }
 
 .room-label {
-  font-size: 24px;
+  font-size: 56px;
   font-weight: 700;
+  letter-spacing: 0.01em;
+  fill: #33291c;
 }
 
 .room-price-tag {
-  font-size: 16px;
-  fill: var(--text-dim);
+  font-size: 40px;
+  font-weight: 600;
+  fill: rgba(38, 30, 20, 0.62);
 }
+
+.room-label-g.selected .room-label { fill: #ffffff; }
+.room-label-g.selected .room-price-tag { fill: rgba(255, 255, 255, 0.85); }
 
 @media (min-width: 640px) {
-  .room-label { font-size: 17px; }
-  .room-price-tag { font-size: 12px; }
-}
-
-.room-price-tag.selected {
-  fill: var(--accent);
-  font-weight: 700;
+  .room-label { font-size: 34px; }
+  .room-price-tag { font-size: 24px; }
 }
 
 /* Fallback list (offices with no drawn layout) */
