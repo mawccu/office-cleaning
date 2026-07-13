@@ -7,10 +7,8 @@ const TIERS = [
   { id: "deep", label: "Deep", desc: "Standard + full scrub, sanitize" },
 ];
 
-// Room layout is drawn on a 640x400 SVG canvas. x/y/w/h define each room's
-// rectangle. The overall shape echoes the office's real stepped floor plan
-// (office1 as the tall block on the left, the rest of the rooms set back
-// to the right) based on the floor plan + whiteboard sketch.
+// Room layout is drawn on an SVG canvas (x/y/w/h per room, in viewBox units),
+// traced from the real floor plan + the hand-drawn office sketch.
 const DEFAULT_OFFICES = {
   main: {
     label: "The Office",
@@ -22,15 +20,19 @@ const DEFAULT_OFFICES = {
       { id: "bath2", name: "Bathroom 2" },
       { id: "hall", name: "Hall" },
     ],
+    // Traced from the actual hand-drawn office sketch: a stepped room (office1)
+    // on the left with the stairwell/entry notch left blank beneath it, a
+    // narrow central hall corridor, and two office suites (office2 + bath1,
+    // office3 + bath2) flanking the hall.
     layout: {
-      viewBox: "0 0 640 400",
+      viewBox: "0 0 640 420",
       shapes: [
-        { id: "office1", x: 20, y: 20, w: 210, h: 360 },
-        { id: "office2", x: 230, y: 90, w: 170, h: 140 },
-        { id: "office3", x: 400, y: 90, w: 220, h: 140 },
-        { id: "bath1", x: 230, y: 230, w: 100, h: 150 },
-        { id: "bath2", x: 330, y: 230, w: 100, h: 150 },
-        { id: "hall", x: 430, y: 230, w: 190, h: 150 },
+        { id: "office1", x: 20, y: 20, w: 220, h: 260 },
+        { id: "office2", x: 260, y: 20, w: 130, h: 260 },
+        { id: "bath1", x: 260, y: 290, w: 130, h: 110 },
+        { id: "hall", x: 390, y: 20, w: 70, h: 380 },
+        { id: "office3", x: 460, y: 20, w: 160, h: 260 },
+        { id: "bath2", x: 460, y: 290, w: 160, h: 110 },
       ],
     },
   },
