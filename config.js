@@ -45,9 +45,13 @@ const DEFAULT_OFFICES = {
       shapes: [
         { id: "kitchen", x: 976, y: 118, w: 299, h: 342 },
         { id: "storage", x: 1287, y: 118, w: 334, h: 342 },
-        { id: "desks", x: 1115, y: 678, w: 506, h: 349 },
-        { id: "dishwashing", x: 1249, y: 463, w: 149, h: 215 },
-        { id: "bathroom", x: 1490, y: 463, w: 131, h: 215 },
+        // Desks is one continuous room (matches the reference: no wall
+        // around Dishwashing/Bathroom, just door-frame markers), so it's
+        // drawn first as the full lower area and the two smaller zones sit
+        // on top of it.
+        { id: "desks", x: 1115, y: 462, w: 506, h: 565 },
+        { id: "dishwashing", x: 1249, y: 478, w: 140, h: 185 },
+        { id: "bathroom", x: 1490, y: 478, w: 110, h: 185 },
       ],
     },
   },

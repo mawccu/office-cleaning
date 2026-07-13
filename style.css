@@ -11,7 +11,16 @@
   --radius: 12px;
 }
 
-* { box-sizing: border-box; }
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
 
 body {
   margin: 0;
@@ -24,21 +33,29 @@ header.top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 28px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
 
 header.top h1 {
-  font-size: 18px;
+  font-size: 17px;
   margin: 0;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+header.top nav {
+  display: flex;
+  gap: 4px;
 }
 
 header.top nav a {
   color: var(--text-dim);
   text-decoration: none;
-  margin-left: 18px;
+  margin-left: 0;
   font-size: 14px;
   padding: 6px 12px;
   border-radius: 8px;
@@ -53,7 +70,13 @@ header.top nav a:hover {
 main {
   max-width: 1000px;
   margin: 0 auto;
-  padding: 28px;
+  padding: 20px 16px 28px;
+}
+
+@media (min-width: 640px) {
+  main { padding: 28px; }
+  header.top { padding: 18px 28px; }
+  header.top h1 { font-size: 18px; }
 }
 
 .office-tabs {
@@ -173,10 +196,11 @@ main {
   right: 0;
   background: var(--panel);
   border-top: 1px solid var(--border);
-  padding: 16px 28px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 5;
 }
 
 .summary-inner {
@@ -185,12 +209,19 @@ main {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.summary-text { font-size: 14px; color: var(--text-dim); }
-.summary-total { font-size: 22px; font-weight: 700; }
+.summary-text { font-size: 13px; color: var(--text-dim); flex: 1 1 auto; min-width: 0; }
+.summary-total { font-size: 20px; font-weight: 700; white-space: nowrap; }
 .summary-total span { color: var(--text-dim); font-size: 13px; font-weight: 400; margin-right: 6px; }
+
+@media (min-width: 640px) {
+  .summary-bar { padding: 16px 28px calc(16px + env(safe-area-inset-bottom)); }
+  .summary-text { font-size: 14px; }
+  .summary-total { font-size: 22px; }
+}
 
 .btn {
   background: var(--accent);
@@ -365,17 +396,25 @@ table.price-table tr:last-child td { border-bottom: none; }
 }
 
 .floorplan-wrap {
-  background: var(--panel);
+  background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
-  margin-bottom: 26px;
+  padding: 10px;
+  margin-bottom: 22px;
+  display: flex;
+  justify-content: center;
 }
 
 .floorplan-svg {
   width: 100%;
   height: auto;
+  max-height: 62vh;
   display: block;
+}
+
+@media (min-width: 640px) {
+  .floorplan-wrap { padding: 16px; margin-bottom: 26px; }
+  .floorplan-svg { max-height: 70vh; }
 }
 
 .room-shape rect {
@@ -402,13 +441,18 @@ table.price-table tr:last-child td { border-bottom: none; }
 }
 
 .room-shape .room-label {
-  font-size: 17px;
+  font-size: 24px;
   font-weight: 700;
 }
 
 .room-shape .room-price-tag {
-  font-size: 12px;
+  font-size: 16px;
   fill: var(--text-dim);
+}
+
+@media (min-width: 640px) {
+  .room-shape .room-label { font-size: 17px; }
+  .room-shape .room-price-tag { font-size: 12px; }
 }
 
 .room-shape.selected .room-price-tag {
