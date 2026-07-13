@@ -75,6 +75,12 @@ const PLATE_RENDER = {
   // Moha's bathroom is carved into the Desks area but its east edge is
   // also part of the building exterior north of y=532 — split that face.
   "moha:bathroom": { parent: "desks", pad: 0, southBottom: "parent", eastSplit: 532 },
+  // Dishwashing Area and Malek's Bathroom are real enclosed rooms carved
+  // out of the (much bigger) Desks footprint — both of their south edges
+  // border Desks, and Dishwashing's east edge does too (Malek's Bathroom's
+  // east edge is the building's real exterior, so it's left as ground).
+  "malek:dishwashing": { parent: "desks", pad: 0, southBottom: "parent", eastBottom: "parent" },
+  "malek:bathroom": { parent: "desks", pad: 0, southBottom: "parent" },
 };
 
 function isoPt(x, y, z = 0) {
@@ -244,7 +250,24 @@ function buildScene() {
   // should always read as standing in front of it.
   const farKey = (b) => (b.x + b.w / 2) + (b.y + b.h / 2);
   const walls = wallBoxes().sort((a, b) => farKey(a) - farKey(b));
-  const shapes = [...FLOOR_PLAN.shapes].sort((a, b) => farKey(a) - farKey(b));
+
+  // A shape with a PLATE_RENDER "parent" (e.g. Dishwashing Area sitting
+  // inside Desks' footprint) must always paint — and hit-test clicks —
+  // after its parent, no matter what the raw depth key says. Desks is a
+  // big room, so its CENTER can sort "later" than a small room resting on
+  // top of it purely because of size, which would wrongly bury (and steal
+  // clicks from) the room that's actually in front. Bump each child's
+  // effective key past its parent's to guarantee correct order.
+  const rawKey = new Map(FLOOR_PLAN.shapes.map((s) => [s, farKey(s)]));
+  for (const s of FLOOR_PLAN.shapes) {
+    const parentId = PLATE_RENDER[shapeKey(s)]?.parent;
+    if (!parentId) continue;
+    const parent = FLOOR_PLAN.shapes.find((p) => p.officeId === s.officeId && p.id === parentId);
+    if (parent && rawKey.get(parent) >= rawKey.get(s)) {
+      rawKey.set(s, rawKey.get(parent) + 1);
+    }
+  }
+  const shapes = [...FLOOR_PLAN.shapes].sort((a, b) => rawKey.get(a) - rawKey.get(b));
   const vb = computeViewBox(walls);
 
   // Soft ground shadow: every room footprint (inflated) at z=0, blurred.

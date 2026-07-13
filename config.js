@@ -21,16 +21,17 @@ const DEFAULT_OFFICES = {
   },
   malek: {
     label: "Malek's Office",
-    // Kitchen at top-left, Storage at top-right. Below them: Dishwashing
-    // Area sits directly under the Kitchen (built as a small bathroom-style
-    // room, repurposed), a Hallway corridor runs between Dishwashing and
-    // the Bathroom (which sits under Storage on the far wall), and Desks
-    // spans the full width at the bottom, fed by the hallway.
+    // Kitchen at top-left, Storage at top-right. Below them: two small
+    // rooms are both built like bathrooms in the real blueprint — the one
+    // directly under Kitchen got repurposed as the Dishwashing Area, the
+    // one under Storage stayed the Bathroom. Desks is everything else:
+    // the real blueprint labels that whole lower area "Sala" (hall/lounge)
+    // — one open room wrapping around both small rooms, not a separate
+    // hallway plus a separate desks room.
     rooms: [
       { id: "kitchen", name: "Kitchen" },
       { id: "storage", name: "Storage" },
       { id: "dishwashing", name: "Dishwashing Area" },
-      { id: "hallway", name: "Hallway" },
       { id: "bathroom", name: "Bathroom" },
       { id: "desks", name: "Desks" },
     ],
@@ -53,17 +54,16 @@ const FLOOR_PLAN = {
 
     { officeId: "malek", id: "kitchen", x: 976, y: 118, w: 299, h: 342 },
     { officeId: "malek", id: "storage", x: 1287, y: 118, w: 334, h: 342 },
-    // Directly under the Kitchen — a real enclosed room (built like a small
-    // bathroom, repurposed as the dishwashing area), door facing east into
-    // the hallway.
-    { officeId: "malek", id: "dishwashing", x: 976, y: 460, w: 220, h: 180 },
-    // The corridor between Dishwashing and Bathroom, open to Kitchen above
-    // and Desks below.
-    { officeId: "malek", id: "hallway", x: 1196, y: 460, w: 225, h: 180 },
-    // Under Storage, on the far right wall — door facing west into the hallway.
-    { officeId: "malek", id: "bathroom", x: 1421, y: 460, w: 200, h: 180 },
-    // Full-width, bottom of the office — wide open to the hallway above it.
-    { officeId: "malek", id: "desks", x: 976, y: 640, w: 645, h: 387 },
+    // Desks = the real "Sala" — one open room spanning the full lower
+    // area, drawn first so Dishwashing and Bathroom sit on top of it as
+    // their own small enclosed rooms (matching the blueprint, where both
+    // are noticeably smaller than the desk space around them).
+    { officeId: "malek", id: "desks", x: 976, y: 460, w: 645, h: 567 },
+    // Directly under Kitchen — door facing east into Desks.
+    { officeId: "malek", id: "dishwashing", x: 976, y: 460, w: 200, h: 170 },
+    // Directly under Storage, on the far wall — bigger than Dishwashing
+    // (it kept its sink+toilet), door facing west into Desks.
+    { officeId: "malek", id: "bathroom", x: 1441, y: 460, w: 180, h: 200 },
   ],
   // Real architectural walls, drawn as one continuous line layer on top of
   // the room fills so the whole thing reads as one building instead of a
@@ -94,19 +94,14 @@ const FLOOR_PLAN = {
     { x1: 976, y1: 1027, x2: 976, y2: 118 },
     // Kitchen / Storage divider
     { x1: 1281, y1: 118, x2: 1281, y2: 460 },
-    // Dishwashing Area: solid on top (under Kitchen) and bottom (above
-    // Desks), door on the east wall into the Hallway.
-    { x1: 976, y1: 460, x2: 1196, y2: 460 },
-    { x1: 1196, y1: 460, x2: 1196, y2: 640, doorGap: [500, 600] },
-    { x1: 976, y1: 640, x2: 1196, y2: 640 },
-    // Bathroom: solid on top (under Storage) and bottom (above Desks),
-    // door on the west wall into the Hallway.
-    { x1: 1287, y1: 460, x2: 1621, y2: 460 },
-    { x1: 1421, y1: 460, x2: 1421, y2: 640, doorGap: [500, 600] },
-    { x1: 1421, y1: 640, x2: 1621, y2: 640 },
-    // Hallway has no walls of its own beyond those doors — open to Kitchen
-    // above (the gap left at x1196-1275 in the wall above) and open to
-    // Desks below.
+    // Dishwashing Area: enclosed on 3 sides, door facing east into Desks.
+    { x1: 976, y1: 460, x2: 1176, y2: 460 },
+    { x1: 1176, y1: 460, x2: 1176, y2: 630, doorGap: [545, 615] },
+    { x1: 976, y1: 630, x2: 1176, y2: 630 },
+    // Bathroom: enclosed on 3 sides, door facing west into Desks.
+    { x1: 1441, y1: 460, x2: 1621, y2: 460 },
+    { x1: 1441, y1: 460, x2: 1441, y2: 660, doorGap: [545, 615] },
+    { x1: 1441, y1: 660, x2: 1621, y2: 660 },
   ],
 };
 
@@ -121,7 +116,6 @@ const DEFAULT_PRICES = {
     kitchen: { quick: 4, standard: 8, deep: 13 },
     storage: { quick: 3, standard: 5, deep: 9 },
     dishwashing: { quick: 3, standard: 6, deep: 10 },
-    hallway: { quick: 3, standard: 5, deep: 8 },
     bathroom: { quick: 4, standard: 7, deep: 12 },
     desks: { quick: 5, standard: 9, deep: 15 },
   },
