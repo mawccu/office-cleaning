@@ -12,6 +12,7 @@ const DEFAULT_OFFICES = {
     label: "Moha's Office",
     rooms: [
       { id: "chill", name: "Chill Area" },
+      { id: "hall", name: "Hall" },
       { id: "bathroom", name: "Bathroom" },
       { id: "desks", name: "Desks" },
     ],
@@ -39,7 +40,9 @@ const FLOOR_PLAN = {
   viewBox: "405 15 1235 1035",
   shapes: [
     { officeId: "moha", id: "chill", x: 430, y: 50, w: 524, h: 239 },
-    { officeId: "moha", id: "chill", x: 656, y: 289, w: 298, h: 243, label: false },
+    // The narrow connector between Chill Area and Desks is its own room
+    // (unlabeled in the reference, but structurally a separate hall/corridor).
+    { officeId: "moha", id: "hall", x: 656, y: 289, w: 298, h: 243 },
     { officeId: "moha", id: "desks", x: 656, y: 532, w: 438, h: 495 },
     { officeId: "moha", id: "bathroom", x: 954, y: 475, w: 140, h: 286 },
     { officeId: "malek", id: "kitchen", x: 976, y: 118, w: 299, h: 342 },
@@ -48,8 +51,10 @@ const FLOOR_PLAN = {
     // Dishwashing/Bathroom, just door-frame markers), so it's drawn first as
     // the full lower area and the two smaller zones sit on top of it.
     { officeId: "malek", id: "desks", x: 1115, y: 462, w: 506, h: 565 },
-    { officeId: "malek", id: "dishwashing", x: 1249, y: 478, w: 140, h: 185 },
-    { officeId: "malek", id: "bathroom", x: 1490, y: 478, w: 110, h: 185 },
+    // Flush against Kitchen/Storage's bottom wall (y460) — no gap, so it
+    // reads as attached to the kitchen row instead of floating in Desks.
+    { officeId: "malek", id: "dishwashing", x: 1249, y: 460, w: 140, h: 205 },
+    { officeId: "malek", id: "bathroom", x: 1490, y: 460, w: 110, h: 205 },
   ],
 };
 
@@ -57,6 +62,7 @@ const FLOOR_PLAN = {
 const DEFAULT_PRICES = {
   moha: {
     chill: { quick: 4, standard: 7, deep: 12 },
+    hall: { quick: 3, standard: 5, deep: 8 },
     bathroom: { quick: 4, standard: 7, deep: 12 },
     desks: { quick: 4, standard: 8, deep: 13 },
   },
