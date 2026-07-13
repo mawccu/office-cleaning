@@ -7,32 +7,47 @@ const TIERS = [
   { id: "deep", label: "Deep", desc: "Standard + full scrub, sanitize" },
 ];
 
-// Room layout is drawn on an SVG canvas (x/y/w/h per room, in viewBox units),
-// traced from the real floor plan + the hand-drawn office sketch.
+// Room layout is drawn on an SVG canvas (x/y/w/h per shape, in viewBox units).
+// Coordinates were traced pixel-for-pixel from the reference floor plan image
+// (CHILL_AREA.png), so both offices' shapes match it exactly. A room can be
+// made of more than one rect (e.g. the L-shaped Chill Area) — shapes sharing
+// the same room id are treated as one clickable room; set label:false on the
+// secondary piece so the name/price only prints once.
 const DEFAULT_OFFICES = {
-  main: {
-    label: "The Office",
+  moha: {
+    label: "Moha's Office",
     rooms: [
-      { id: "office1", name: "Office 1" },
-      { id: "office2", name: "Office 2" },
-      { id: "office3", name: "Office 3" },
-      { id: "bath1", name: "Bathroom 1" },
-      { id: "bath2", name: "Bathroom 2" },
-      { id: "hall", name: "Hall" },
+      { id: "chill", name: "Chill Area" },
+      { id: "bathroom", name: "Bathroom" },
+      { id: "desks", name: "Desks" },
     ],
-    // Traced from the actual hand-drawn office sketch: a stepped room (office1)
-    // on the left with the stairwell/entry notch left blank beneath it, a
-    // narrow central hall corridor, and two office suites (office2 + bath1,
-    // office3 + bath2) flanking the hall.
     layout: {
-      viewBox: "0 0 640 420",
+      viewBox: "410 30 710 1020",
       shapes: [
-        { id: "office1", x: 20, y: 20, w: 220, h: 260 },
-        { id: "office2", x: 260, y: 20, w: 130, h: 260 },
-        { id: "bath1", x: 260, y: 290, w: 130, h: 110 },
-        { id: "hall", x: 390, y: 20, w: 70, h: 380 },
-        { id: "office3", x: 460, y: 20, w: 160, h: 260 },
-        { id: "bath2", x: 460, y: 290, w: 160, h: 110 },
+        { id: "chill", x: 430, y: 50, w: 524, h: 239 },
+        { id: "chill", x: 656, y: 289, w: 298, h: 243, label: false },
+        { id: "desks", x: 656, y: 532, w: 438, h: 495 },
+        { id: "bathroom", x: 954, y: 475, w: 140, h: 286 },
+      ],
+    },
+  },
+  malek: {
+    label: "Malek's Office",
+    rooms: [
+      { id: "kitchen", name: "Kitchen" },
+      { id: "storage", name: "Storage" },
+      { id: "dishwashing", name: "Dishwashing Area" },
+      { id: "bathroom", name: "Bathroom" },
+      { id: "desks", name: "Desks" },
+    ],
+    layout: {
+      viewBox: "960 100 680 950",
+      shapes: [
+        { id: "kitchen", x: 976, y: 118, w: 299, h: 342 },
+        { id: "storage", x: 1287, y: 118, w: 334, h: 342 },
+        { id: "desks", x: 1115, y: 678, w: 506, h: 349 },
+        { id: "dishwashing", x: 1249, y: 463, w: 149, h: 215 },
+        { id: "bathroom", x: 1490, y: 463, w: 131, h: 215 },
       ],
     },
   },
@@ -40,13 +55,17 @@ const DEFAULT_OFFICES = {
 
 // Default price per room per tier ($)
 const DEFAULT_PRICES = {
-  main: {
-    office1: { quick: 5, standard: 9, deep: 15 },
-    office2: { quick: 4, standard: 7, deep: 12 },
-    office3: { quick: 4, standard: 8, deep: 13 },
-    bath1: { quick: 4, standard: 7, deep: 12 },
-    bath2: { quick: 4, standard: 7, deep: 12 },
-    hall: { quick: 6, standard: 10, deep: 16 },
+  moha: {
+    chill: { quick: 4, standard: 7, deep: 12 },
+    bathroom: { quick: 4, standard: 7, deep: 12 },
+    desks: { quick: 4, standard: 8, deep: 13 },
+  },
+  malek: {
+    kitchen: { quick: 4, standard: 8, deep: 13 },
+    storage: { quick: 3, standard: 5, deep: 9 },
+    dishwashing: { quick: 3, standard: 6, deep: 10 },
+    bathroom: { quick: 4, standard: 7, deep: 12 },
+    desks: { quick: 5, standard: 9, deep: 15 },
   },
 };
 

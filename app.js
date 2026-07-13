@@ -93,12 +93,17 @@ function renderFloorPlan() {
       const selected = !!selections[s.id];
       const cx = s.x + s.w / 2;
       const cy = s.y + s.h / 2;
+      const showLabel = s.label !== false;
       const priceTag = selected ? `$${priceFor(s.id, selections[s.id])} · ${tierLabel(selections[s.id])}` : "tap to select";
+      const text = showLabel
+        ? `
+          <text class="room-label" x="${cx}" y="${cy - 6}" text-anchor="middle">${roomName(s.id)}</text>
+          <text class="room-price-tag" x="${cx}" y="${cy + 14}" text-anchor="middle">${priceTag}</text>`
+        : "";
       return `
         <g class="room-shape ${selected ? "selected" : ""}" data-room="${s.id}">
           <rect x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="8"></rect>
-          <text class="room-label" x="${cx}" y="${cy - 6}" text-anchor="middle">${roomName(s.id)}</text>
-          <text class="room-price-tag" x="${cx}" y="${cy + 14}" text-anchor="middle">${priceTag}</text>
+          ${text}
         </g>`;
     })
     .join("");
