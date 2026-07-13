@@ -72,11 +72,9 @@ const WALL_T  = 12;    // wall thickness
 // pad > 0 draws the zone as a slightly raised platform (the wall-less
 // zones in Malek's office, marked only by door frames in the reference).
 const PLATE_RENDER = {
-  "malek:dishwashing": { parent: "desks", pad: 6, southBottom: "parent", eastBottom: "parent" },
-  "malek:bathroom":    { parent: "desks", pad: 6, southBottom: "parent", eastBottom: "parent" },
   // Moha's bathroom is carved into the Desks area but its east edge is
   // also part of the building exterior north of y=532 — split that face.
-  "moha:bathroom":     { parent: "desks", pad: 0, southBottom: "parent", eastSplit: 532 },
+  "moha:bathroom": { parent: "desks", pad: 0, southBottom: "parent", eastSplit: 532 },
 };
 
 function isoPt(x, y, z = 0) {
@@ -89,6 +87,13 @@ function ptsAttr(points) {
 function shapeKey(s) {
   return `${s.officeId}:${s.id}`;
 }
+
+// Stable per-shape identity (distinct from shapeKey, which is per-ROOM and
+// intentionally shared by multi-piece rooms like the L-shaped Chill Area).
+// Every DOM element needs its OWN entry, or the second piece of a
+// multi-piece room silently steals the first piece's polygon references
+// during the lift tween and corrupts its geometry every frame.
+FLOOR_PLAN.shapes.forEach((s, i) => { s.__i = i; });
 
 // Current + target lift per shape (world units), tweened.
 const liftCur = {};
@@ -123,6 +128,19 @@ function plateGeom(s) {
 }
 
 // Split walls into solid pieces around their door gaps, as 3D boxes.
+// A long wall (e.g. a full-height exterior wall) spans a wide RANGE of
+// depths along its own length. Giving it one single depth key for sorting
+// means that key can only be "right" for one point along the wall — at
+// every other point it either wrongly hides things in front of it or
+// wrongly gets hidden by things behind it. The building's tall exterior
+// wall was doing exactly that: its one east-facing polygon runs its whole
+// length, so it silently painted over a short interior wall it only
+// crosses briefly. Fix: chunk any wall span longer than CHUNK into shorter
+// pieces before turning it into a box, so each piece's depth key stays
+// locally accurate. Adjacent chunks still render pixel-flush, so visually
+// it's still one continuous wall.
+const WALL_CHUNK = 70;
+
 function wallBoxes() {
   const boxes = [];
   for (const w of FLOOR_PLAN.walls || []) {
@@ -138,11 +156,17 @@ function wallBoxes() {
       spans.push([lo - WALL_T / 2, hi + WALL_T / 2]);
     }
     for (const [a, b] of spans) {
-      boxes.push(
-        horizontal
-          ? { x: a, y: w.y1 - WALL_T / 2, w: b - a, h: WALL_T }
-          : { x: w.x1 - WALL_T / 2, y: a, w: WALL_T, h: b - a }
-      );
+      const len = b - a;
+      const n = Math.max(1, Math.ceil(len / WALL_CHUNK));
+      const step = len / n;
+      for (let k = 0; k < n; k++) {
+        const segA = a + step * k, segB = a + step * (k + 1);
+        boxes.push(
+          horizontal
+            ? { x: segA, y: w.y1 - WALL_T / 2, w: segB - segA, h: WALL_T }
+            : { x: w.x1 - WALL_T / 2, y: segA, w: WALL_T, h: segB - segA }
+        );
+      }
     }
   }
   return boxes;
@@ -207,8 +231,20 @@ function buildScene() {
     liftCur[shapeKey(s)] = liftTarget(s.officeId, s.id);
   }
 
-  const walls = wallBoxes().sort((a, b) => a.x + a.y - (b.x + b.y));
-  const shapes = [...FLOOR_PLAN.shapes].sort((a, b) => a.x + a.y - (b.x + b.y));
+  // Depth-sort by each box's CENTER point (not its far corner) — using the
+  // far corner made long/tall boxes (like the full-height exterior walls)
+  // sort as if they were "further forward" than they really are, purely
+  // because their bounding box is big, which let a tall exterior wall
+  // paint over a short interior wall it merely shares a corner with. The
+  // center point is a fair depth proxy regardless of a box's size. Plates
+  // and walls stay in two separate layers (all plates, then all walls) —
+  // a plate's south/east face is a tall skirt running from roofline to
+  // ground along that whole edge, so mixing it into the same pass as a
+  // thin wall on that edge risks the plate's key outranking the wall that
+  // should always read as standing in front of it.
+  const farKey = (b) => (b.x + b.w / 2) + (b.y + b.h / 2);
+  const walls = wallBoxes().sort((a, b) => farKey(a) - farKey(b));
+  const shapes = [...FLOOR_PLAN.shapes].sort((a, b) => farKey(a) - farKey(b));
   const vb = computeViewBox(walls);
 
   // Soft ground shadow: every room footprint (inflated) at z=0, blurred.
@@ -230,7 +266,7 @@ function buildScene() {
         .map(([face, p]) => `<polygon class="f-${face === "east2" ? "east" : face}" data-face="${face}" points="${ptsAttr(p)}"></polygon>`)
         .join("");
       const pad = (PLATE_RENDER[shapeKey(s)]?.pad ?? 0) > 0 ? " pad" : "";
-      return `<g class="plate office-${s.officeId}${pad}" data-office="${s.officeId}" data-room="${s.id}">${faces}</g>`;
+      return `<g class="plate office-${s.officeId}${pad}" data-office="${s.officeId}" data-room="${s.id}" data-idx="${s.__i}">${faces}</g>`;
     })
     .join("");
 
@@ -279,15 +315,19 @@ function buildScene() {
       ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${offices[id].label}</div>`).join("")}
     </div>`;
 
+  // Keyed per SHAPE INSTANCE (s.__i), not per room — a multi-piece room
+  // like Chill Area has two separate <g class="plate"> elements in the DOM
+  // and each needs its own polygon references, or the tween loop below
+  // will happily overwrite one piece's geometry with the other's.
   isoScene = { shapeEls: new Map() };
   const svg = floorPlanWrapEl.querySelector("svg");
-  for (const s of FLOOR_PLAN.shapes) {
-    const key = shapeKey(s);
-    const group = svg.querySelector(`.plate[data-office="${s.officeId}"][data-room="${s.id}"]`);
+  svg.querySelectorAll(".plate").forEach((group) => {
+    const i = Number(group.dataset.idx);
+    const s = FLOOR_PLAN.shapes[i];
     const polyEls = {};
     group.querySelectorAll("polygon").forEach((el) => (polyEls[el.dataset.face] = el));
     const labelG = svg.querySelector(`.room-label-g[data-office="${s.officeId}"][data-room="${s.id}"]`);
-    isoScene.shapeEls.set(key, {
+    isoScene.shapeEls.set(i, {
       shape: s,
       group,
       polyEls,
@@ -295,12 +335,11 @@ function buildScene() {
       tagEl: labelG ? labelG.querySelector(".room-price-tag") : null,
     });
     group.addEventListener("click", () => toggleRoom(s.officeId, s.id));
-  }
+  });
 }
 
 function applyShapeGeometry(s) {
-  const key = shapeKey(s);
-  const entry = isoScene.shapeEls.get(key);
+  const entry = isoScene.shapeEls.get(s.__i);
   const { polys, top } = plateGeom(s);
   for (const [face, p] of Object.entries(polys)) {
     if (entry.polyEls[face]) entry.polyEls[face].setAttribute("points", ptsAttr(p));
@@ -333,7 +372,7 @@ function renderFloorPlan() {
   if (!isoScene) buildScene();
   // Sync selection classes + label text, then tween slab heights.
   for (const s of FLOOR_PLAN.shapes) {
-    const entry = isoScene.shapeEls.get(shapeKey(s));
+    const entry = isoScene.shapeEls.get(s.__i);
     const tier = selections[s.officeId][s.id];
     entry.group.classList.toggle("selected", !!tier);
     if (entry.labelG) {
