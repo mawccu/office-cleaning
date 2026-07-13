@@ -353,3 +353,101 @@ table.price-table tr:last-child td { border-bottom: none; }
   text-align: center;
   padding: 40px 0;
 }
+
+/* Floor plan */
+.section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.floorplan-wrap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 26px;
+}
+
+.floorplan-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.room-shape rect {
+  fill: var(--panel-2);
+  stroke: var(--border);
+  stroke-width: 2;
+  cursor: pointer;
+  transition: fill .15s, stroke .15s;
+}
+
+.room-shape:hover rect {
+  stroke: var(--accent-dim);
+}
+
+.room-shape.selected rect {
+  fill: rgba(79, 140, 255, 0.22);
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.room-shape text {
+  pointer-events: none;
+  fill: var(--text);
+}
+
+.room-shape .room-label {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.room-shape .room-price-tag {
+  font-size: 12px;
+  fill: var(--text-dim);
+}
+
+.room-shape.selected .room-price-tag {
+  fill: var(--accent);
+  font-weight: 700;
+}
+
+/* Fallback list (offices with no drawn layout) */
+.room-shape-fallback {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  padding: 16px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.room-shape-fallback.selected {
+  border-color: var(--accent);
+  background: rgba(79, 140, 255, 0.12);
+}
+
+/* Selected areas panel */
+.selected-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 100px;
+}
+
+.selected-panel .tier-row {
+  display: flex;
+}
+
+.selected-empty {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  padding: 30px 0;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 100px;
+}

@@ -7,40 +7,44 @@ const TIERS = [
   { id: "deep", label: "Deep", desc: "Standard + full scrub, sanitize" },
 ];
 
+// Room layout is drawn on a 640x400 SVG canvas. x/y/w/h define each room's
+// rectangle. The overall shape echoes the office's real stepped floor plan
+// (office1 as the tall block on the left, the rest of the rooms set back
+// to the right) based on the floor plan + whiteboard sketch.
 const DEFAULT_OFFICES = {
-  moha: {
-    label: "Moha's Office",
+  main: {
+    label: "The Office",
     rooms: [
-      { id: "desks", name: "Desks" },
-      { id: "chilling", name: "Chilling Room" },
-      { id: "bathroom", name: "Bathroom" },
+      { id: "office1", name: "Office 1" },
+      { id: "office2", name: "Office 2" },
+      { id: "office3", name: "Office 3" },
+      { id: "bath1", name: "Bathroom 1" },
+      { id: "bath2", name: "Bathroom 2" },
+      { id: "hall", name: "Hall" },
     ],
-  },
-  malek: {
-    label: "Malek's Office",
-    rooms: [
-      { id: "kitchen", name: "Kitchen" },
-      { id: "desks", name: "Desks" },
-      { id: "storage", name: "Storage" },
-      { id: "bathroom", name: "Bathroom" },
-      { id: "hallway", name: "Hallway" },
-    ],
+    layout: {
+      viewBox: "0 0 640 400",
+      shapes: [
+        { id: "office1", x: 20, y: 20, w: 210, h: 360 },
+        { id: "office2", x: 230, y: 90, w: 170, h: 140 },
+        { id: "office3", x: 400, y: 90, w: 220, h: 140 },
+        { id: "bath1", x: 230, y: 230, w: 100, h: 150 },
+        { id: "bath2", x: 330, y: 230, w: 100, h: 150 },
+        { id: "hall", x: 430, y: 230, w: 190, h: 150 },
+      ],
+    },
   },
 };
 
 // Default price per room per tier ($)
 const DEFAULT_PRICES = {
-  moha: {
-    desks: { quick: 3, standard: 6, deep: 10 },
-    chilling: { quick: 3, standard: 5, deep: 9 },
-    bathroom: { quick: 4, standard: 7, deep: 12 },
-  },
-  malek: {
-    kitchen: { quick: 4, standard: 8, deep: 13 },
-    desks: { quick: 3, standard: 6, deep: 10 },
-    storage: { quick: 3, standard: 5, deep: 8 },
-    bathroom: { quick: 4, standard: 7, deep: 12 },
-    hallway: { quick: 2, standard: 4, deep: 6 },
+  main: {
+    office1: { quick: 5, standard: 9, deep: 15 },
+    office2: { quick: 4, standard: 7, deep: 12 },
+    office3: { quick: 4, standard: 8, deep: 13 },
+    bath1: { quick: 4, standard: 7, deep: 12 },
+    bath2: { quick: 4, standard: 7, deep: 12 },
+    hall: { quick: 6, standard: 10, deep: 16 },
   },
 };
 

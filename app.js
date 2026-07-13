@@ -12,7 +12,8 @@ function resetSelections() {
 resetSelections();
 
 const officeTabsEl = document.getElementById("officeTabs");
-const roomGridEl = document.getElementById("roomGrid");
+const floorPlanWrapEl = document.getElementById("floorPlanWrap");
+const selectedPanelEl = document.getElementById("selectedPanel");
 const summaryTextEl = document.getElementById("summaryText");
 const totalPriceEl = document.getElementById("totalPrice");
 const confirmBtn = document.getElementById("confirmBtn");
@@ -24,7 +25,10 @@ const successBanner = document.getElementById("successBanner");
 
 function renderOfficeTabs() {
   officeTabsEl.innerHTML = "";
-  Object.entries(offices).forEach(([id, office]) => {
+  const ids = Object.keys(offices);
+  officeTabsEl.style.display = ids.length > 1 ? "flex" : "none";
+  ids.forEach((id) => {
+    const office = offices[id];
     const tab = document.createElement("div");
     tab.className = "office-tab" + (id === currentOfficeId ? " active" : "");
     tab.innerHTML = `<div class="name">${office.label}</div><div class="count">${office.rooms.length} areas</div>`;
@@ -32,7 +36,8 @@ function renderOfficeTabs() {
       currentOfficeId = id;
       resetSelections();
       renderOfficeTabs();
-      renderRooms();
+      renderFloorPlan();
+      renderSelectedPanel();
       renderSummary();
     });
     officeTabsEl.appendChild(tab);
@@ -43,53 +48,113 @@ function priceFor(roomId, tierId) {
   return prices[currentOfficeId]?.[roomId]?.[tierId] ?? 0;
 }
 
-function renderRooms() {
-  roomGridEl.innerHTML = "";
-  offices[currentOfficeId].rooms.forEach((room) => {
-    const selectedTier = selections[room.id];
-    const card = document.createElement("div");
-    card.className = "room-card" + (selectedTier ? " selected" : "");
+function roomName(roomId) {
+  return offices[currentOfficeId].rooms.find((r) => r.id === roomId)?.name ?? roomId;
+}
 
-    const head = document.createElement("div");
-    head.className = "room-head";
-    head.innerHTML = `
-      <div class="room-name">${room.name}</div>
-      <div class="checkbox"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>
-    `;
-    head.addEventListener("click", () => {
-      selections[room.id] = selections[room.id] ? null : "standard";
-      renderRooms();
-      renderSummary();
+function tierLabel(tierId) {
+  return TIERS.find((t) => t.id === tierId)?.label ?? "";
+}
+
+function toggleRoom(roomId) {
+  selections[roomId] = selections[roomId] ? null : "standard";
+  renderFloorPlan();
+  renderSelectedPanel();
+  renderSummary();
+}
+
+function setTier(roomId, tierId) {
+  selections[roomId] = tierId;
+  renderFloorPlan();
+  renderSelectedPanel();
+  renderSummary();
+}
+
+function renderFloorPlan() {
+  const office = offices[currentOfficeId];
+  const layout = office.layout;
+
+  if (!layout) {
+    // Fallback for an office with no drawn layout: simple list of tap targets.
+    floorPlanWrapEl.innerHTML = `<div class="room-grid">${office.rooms
+      .map((room) => {
+        const selected = !!selections[room.id];
+        return `<div class="room-shape-fallback ${selected ? "selected" : ""}" data-room="${room.id}">${room.name}</div>`;
+      })
+      .join("")}</div>`;
+    floorPlanWrapEl.querySelectorAll("[data-room]").forEach((el) => {
+      el.addEventListener("click", () => toggleRoom(el.dataset.room));
     });
-    card.appendChild(head);
+    return;
+  }
 
-    const tierRow = document.createElement("div");
-    tierRow.className = "tier-row";
-    TIERS.forEach((tier) => {
-      const btn = document.createElement("div");
-      btn.className = "tier-btn" + (selectedTier === tier.id ? " active" : "");
-      btn.innerHTML = `${tier.label}<span class="price">$${priceFor(room.id, tier.id)}</span>`;
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        selections[room.id] = tier.id;
-        renderRooms();
-        renderSummary();
-      });
-      tierRow.appendChild(btn);
-    });
-    card.appendChild(tierRow);
+  const shapesHtml = layout.shapes
+    .map((s) => {
+      const selected = !!selections[s.id];
+      const cx = s.x + s.w / 2;
+      const cy = s.y + s.h / 2;
+      const priceTag = selected ? `$${priceFor(s.id, selections[s.id])} · ${tierLabel(selections[s.id])}` : "tap to select";
+      return `
+        <g class="room-shape ${selected ? "selected" : ""}" data-room="${s.id}">
+          <rect x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="8"></rect>
+          <text class="room-label" x="${cx}" y="${cy - 6}" text-anchor="middle">${roomName(s.id)}</text>
+          <text class="room-price-tag" x="${cx}" y="${cy + 14}" text-anchor="middle">${priceTag}</text>
+        </g>`;
+    })
+    .join("");
 
-    roomGridEl.appendChild(card);
+  floorPlanWrapEl.innerHTML = `
+    <svg class="floorplan-svg" viewBox="${layout.viewBox}" preserveAspectRatio="xMidYMid meet">
+      ${shapesHtml}
+    </svg>`;
+
+  floorPlanWrapEl.querySelectorAll(".room-shape").forEach((el) => {
+    el.addEventListener("click", () => toggleRoom(el.dataset.room));
   });
 }
 
 function getActiveSelections() {
   return Object.entries(selections)
     .filter(([, tier]) => tier)
-    .map(([roomId, tier]) => {
-      const room = offices[currentOfficeId].rooms.find((r) => r.id === roomId);
-      return { roomId, roomName: room.name, tier, price: priceFor(roomId, tier) };
+    .map(([roomId, tier]) => ({ roomId, roomName: roomName(roomId), tier, price: priceFor(roomId, tier) }));
+}
+
+function renderSelectedPanel() {
+  const active = getActiveSelections();
+  if (!active.length) {
+    selectedPanelEl.innerHTML = `<div class="selected-empty">Tap rooms in the floor plan above to add them here.</div>`;
+    return;
+  }
+
+  selectedPanelEl.innerHTML = active
+    .map(
+      (a) => `
+    <div class="room-card selected">
+      <div class="room-head" data-remove="${a.roomId}">
+        <div class="room-name">${a.roomName}</div>
+        <div class="checkbox"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>
+      </div>
+      <div class="tier-row">
+        ${TIERS.map(
+          (tier) => `
+          <div class="tier-btn ${a.tier === tier.id ? "active" : ""}" data-tier="${tier.id}" data-room="${a.roomId}">
+            ${tier.label}<span class="price">$${priceFor(a.roomId, tier.id)}</span>
+          </div>`
+        ).join("")}
+      </div>
+    </div>`
+    )
+    .join("");
+
+  selectedPanelEl.querySelectorAll("[data-remove]").forEach((el) => {
+    el.addEventListener("click", () => toggleRoom(el.dataset.remove));
+  });
+  selectedPanelEl.querySelectorAll("[data-tier]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setTier(el.dataset.room, el.dataset.tier);
     });
+  });
 }
 
 function renderSummary() {
@@ -112,7 +177,7 @@ confirmBtn.addEventListener("click", () => {
       <div class="modal-line">
         <div>
           <div class="room">${a.roomName}</div>
-          <div class="tier">${TIERS.find((t) => t.id === a.tier).label} clean</div>
+          <div class="tier">${tierLabel(a.tier)} clean</div>
         </div>
         <div class="price">$${a.price}</div>
       </div>`
@@ -141,12 +206,14 @@ document.getElementById("submitBtn").addEventListener("click", () => {
   });
   modalOverlay.classList.remove("open");
   resetSelections();
-  renderRooms();
+  renderFloorPlan();
+  renderSelectedPanel();
   renderSummary();
   successBanner.classList.add("open");
   setTimeout(() => successBanner.classList.remove("open"), 4000);
 });
 
 renderOfficeTabs();
-renderRooms();
+renderFloorPlan();
+renderSelectedPanel();
 renderSummary();
