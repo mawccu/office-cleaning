@@ -101,6 +101,71 @@ function shapeKey(s) {
 // during the lift tween and corrupts its geometry every frame.
 FLOOR_PLAN.shapes.forEach((s, i) => { s.__i = i; });
 
+// Rectilinear union of axis-aligned rects -> ordered boundary polygon
+// (world x/y units). Used so a multi-piece room (e.g. the L-shaped Chill
+// Area, drawn as 2 touching rects) gets ONE floor polygon instead of 2
+// separate ones — two same-color adjacent SVG polygons still show a
+// faint seam along their shared edge (independent per-polygon
+// antialiasing), even with identical fill and stroke. One polygon has no
+// seam to show.
+function unionOutline(rects) {
+  const xs = [...new Set(rects.flatMap((r) => [r.x, r.x + r.w]))].sort((a, b) => a - b);
+  const ys = [...new Set(rects.flatMap((r) => [r.y, r.y + r.h]))].sort((a, b) => a - b);
+  const filled = new Set();
+  for (const r of rects) {
+    const x0 = xs.indexOf(r.x), x1 = xs.indexOf(r.x + r.w);
+    const y0 = ys.indexOf(r.y), y1 = ys.indexOf(r.y + r.h);
+    for (let i = x0; i < x1; i++) for (let j = y0; j < y1; j++) filled.add(`${i},${j}`);
+  }
+  // Every boundary edge of every filled grid cell either cancels out
+  // against the identical (reversed) edge of a neighboring filled cell,
+  // or survives — the surviving edges are exactly the outer boundary.
+  const edges = new Map();
+  const toggle = (x1, y1, x2, y2) => {
+    const rev = `${x2},${y2},${x1},${y1}`;
+    if (edges.has(rev)) edges.delete(rev);
+    else edges.set(`${x1},${y1},${x2},${y2}`, true);
+  };
+  for (const key of filled) {
+    const [i, j] = key.split(",").map(Number);
+    const x0 = xs[i], x1 = xs[i + 1], y0 = ys[j], y1 = ys[j + 1];
+    toggle(x0, y0, x1, y0);
+    toggle(x1, y0, x1, y1);
+    toggle(x1, y1, x0, y1);
+    toggle(x0, y1, x0, y0);
+  }
+  const next = new Map();
+  for (const key of edges.keys()) {
+    const [x1, y1, x2, y2] = key.split(",").map(Number);
+    next.set(`${x1},${y1}`, [x2, y2]);
+  }
+  const [firstKey] = next.keys();
+  const loop = [];
+  let cur = firstKey;
+  do {
+    const [x, y] = cur.split(",").map(Number);
+    loop.push([x, y]);
+    const [nx, ny] = next.get(cur);
+    cur = `${nx},${ny}`;
+  } while (cur !== firstKey && loop.length < rects.length * 5);
+  return loop;
+}
+
+// Precompute each multi-piece room's combined floor outline once (static
+// geometry, independent of lift/selection state).
+const ROOM_TOP_OUTLINE = new Map();
+{
+  const groups = new Map();
+  for (const s of FLOOR_PLAN.shapes) {
+    const key = shapeKey(s);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  for (const [key, pieces] of groups) {
+    if (pieces.length > 1) ROOM_TOP_OUTLINE.set(key, unionOutline(pieces));
+  }
+}
+
 // Current + target lift per shape (world units), tweened.
 const liftCur = {};
 function liftTarget(officeId, roomId) {
@@ -116,9 +181,19 @@ function plateGeom(s) {
   const top = ISO_BASE + (cfg?.pad ?? 0) + Lself + Lparent;
   const x2 = s.x + s.w, y2 = s.y + s.h;
 
-  const polys = {
-    top: [isoPt(s.x, s.y, top), isoPt(x2, s.y, top), isoPt(x2, y2, top), isoPt(s.x, y2, top)],
-  };
+  const polys = {};
+  const unionPts = ROOM_TOP_OUTLINE.get(key);
+  if (unionPts) {
+    // Multi-piece room: only the FIRST piece (lowest __i) draws the shared
+    // floor polygon, traced from the union outline — the other piece(s)
+    // draw no top face at all, so there's no second polygon to seam
+    // against. Both still get their own south/east walls and both still
+    // sit in their own clickable <g>, but only one owns the floor.
+    const isFirst = s.__i === Math.min(...FLOOR_PLAN.shapes.filter((o) => shapeKey(o) === key).map((o) => o.__i));
+    if (isFirst) polys.top = unionPts.map(([x, y]) => isoPt(x, y, top));
+  } else {
+    polys.top = [isoPt(s.x, s.y, top), isoPt(x2, s.y, top), isoPt(x2, y2, top), isoPt(s.x, y2, top)];
+  }
   const southBottom = cfg?.southBottom === "parent" ? parentTop : 0;
   polys.south = [isoPt(s.x, y2, top), isoPt(x2, y2, top), isoPt(x2, y2, southBottom), isoPt(s.x, y2, southBottom)];
 
