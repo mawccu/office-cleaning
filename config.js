@@ -7,12 +7,6 @@ const TIERS = [
   { id: "deep", label: "Deep", desc: "Standard + full scrub, sanitize" },
 ];
 
-// Room layout is drawn on an SVG canvas (x/y/w/h per shape, in viewBox units).
-// Coordinates were traced pixel-for-pixel from the reference floor plan image
-// (CHILL_AREA.png), so both offices' shapes match it exactly. A room can be
-// made of more than one rect (e.g. the L-shaped Chill Area) — shapes sharing
-// the same room id are treated as one clickable room; set label:false on the
-// secondary piece so the name/price only prints once.
 const DEFAULT_OFFICES = {
   moha: {
     label: "Moha's Office",
@@ -21,15 +15,6 @@ const DEFAULT_OFFICES = {
       { id: "bathroom", name: "Bathroom" },
       { id: "desks", name: "Desks" },
     ],
-    layout: {
-      viewBox: "410 30 710 1020",
-      shapes: [
-        { id: "chill", x: 430, y: 50, w: 524, h: 239 },
-        { id: "chill", x: 656, y: 289, w: 298, h: 243, label: false },
-        { id: "desks", x: 656, y: 532, w: 438, h: 495 },
-        { id: "bathroom", x: 954, y: 475, w: 140, h: 286 },
-      ],
-    },
   },
   malek: {
     label: "Malek's Office",
@@ -40,21 +25,32 @@ const DEFAULT_OFFICES = {
       { id: "bathroom", name: "Bathroom" },
       { id: "desks", name: "Desks" },
     ],
-    layout: {
-      viewBox: "960 100 680 950",
-      shapes: [
-        { id: "kitchen", x: 976, y: 118, w: 299, h: 342 },
-        { id: "storage", x: 1287, y: 118, w: 334, h: 342 },
-        // Desks is one continuous room (matches the reference: no wall
-        // around Dishwashing/Bathroom, just door-frame markers), so it's
-        // drawn first as the full lower area and the two smaller zones sit
-        // on top of it.
-        { id: "desks", x: 1115, y: 462, w: 506, h: 565 },
-        { id: "dishwashing", x: 1249, y: 478, w: 140, h: 185 },
-        { id: "bathroom", x: 1490, y: 478, w: 110, h: 185 },
-      ],
-    },
   },
+};
+
+// Single combined floor plan — one map, exactly as drawn in the reference
+// image (CHILL_AREA.png). Both offices sit in the SAME coordinate space
+// (traced pixel-for-pixel from that image), so they're drawn as one
+// continuous building rather than two separate boxes. Each shape carries
+// its officeId + room id. A room can be made of more than one rect (e.g.
+// the L-shaped Chill Area) — set label:false on the secondary piece so the
+// name/price only prints once.
+const FLOOR_PLAN = {
+  viewBox: "405 15 1235 1035",
+  shapes: [
+    { officeId: "moha", id: "chill", x: 430, y: 50, w: 524, h: 239 },
+    { officeId: "moha", id: "chill", x: 656, y: 289, w: 298, h: 243, label: false },
+    { officeId: "moha", id: "desks", x: 656, y: 532, w: 438, h: 495 },
+    { officeId: "moha", id: "bathroom", x: 954, y: 475, w: 140, h: 286 },
+    { officeId: "malek", id: "kitchen", x: 976, y: 118, w: 299, h: 342 },
+    { officeId: "malek", id: "storage", x: 1287, y: 118, w: 334, h: 342 },
+    // Desks is one continuous room (matches the reference: no wall around
+    // Dishwashing/Bathroom, just door-frame markers), so it's drawn first as
+    // the full lower area and the two smaller zones sit on top of it.
+    { officeId: "malek", id: "desks", x: 1115, y: 462, w: 506, h: 565 },
+    { officeId: "malek", id: "dishwashing", x: 1249, y: 478, w: 140, h: 185 },
+    { officeId: "malek", id: "bathroom", x: 1490, y: 478, w: 110, h: 185 },
+  ],
 };
 
 // Default price per room per tier ($)

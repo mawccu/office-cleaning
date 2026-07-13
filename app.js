@@ -38,79 +38,55 @@ function tierLabel(tierId) {
 
 function toggleRoom(officeId, roomId) {
   selections[officeId][roomId] = selections[officeId][roomId] ? null : "standard";
-  renderFloorPlans();
+  renderFloorPlan();
   renderSelectedPanel();
   renderSummary();
 }
 
 function setTier(officeId, roomId, tierId) {
   selections[officeId][roomId] = tierId;
-  renderFloorPlans();
+  renderFloorPlan();
   renderSelectedPanel();
   renderSummary();
 }
 
-function officeFloorPlanHtml(officeId) {
-  const office = offices[officeId];
-  const layout = office.layout;
-
-  if (!layout) {
-    // Fallback for an office with no drawn layout: simple list of tap targets.
-    const cards = office.rooms
-      .map((room) => {
-        const selected = !!selections[officeId][room.id];
-        return `<div class="room-shape-fallback ${selected ? "selected" : ""}" data-office="${officeId}" data-room="${room.id}">${room.name}</div>`;
-      })
-      .join("");
-    return `<div class="room-grid">${cards}</div>`;
-  }
-
-  const shapesHtml = layout.shapes
+// Renders ONE combined map (FLOOR_PLAN) — both offices in the same
+// coordinate space, exactly as laid out in the reference image.
+function renderFloorPlan() {
+  const shapesHtml = FLOOR_PLAN.shapes
     .map((s) => {
-      const selected = !!selections[officeId][s.id];
+      const selected = !!selections[s.officeId][s.id];
       const cx = s.x + s.w / 2;
       const cy = s.y + s.h / 2;
       const showLabel = s.label !== false;
       const priceTag = selected
-        ? `$${priceFor(officeId, s.id, selections[officeId][s.id])} · ${tierLabel(selections[officeId][s.id])}`
+        ? `$${priceFor(s.officeId, s.id, selections[s.officeId][s.id])} · ${tierLabel(selections[s.officeId][s.id])}`
         : "tap to select";
       const text = showLabel
         ? `
-          <text class="room-label" x="${cx}" y="${cy - 6}" text-anchor="middle">${roomName(officeId, s.id)}</text>
+          <text class="room-label" x="${cx}" y="${cy - 6}" text-anchor="middle">${roomName(s.officeId, s.id)}</text>
           <text class="room-price-tag" x="${cx}" y="${cy + 14}" text-anchor="middle">${priceTag}</text>`
         : "";
       return `
-        <g class="room-shape ${selected ? "selected" : ""}" data-office="${officeId}" data-room="${s.id}">
+        <g class="room-shape office-${s.officeId} ${selected ? "selected" : ""}" data-office="${s.officeId}" data-room="${s.id}">
           <rect x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="8"></rect>
           ${text}
         </g>`;
     })
     .join("");
 
-  const [, , vbw, vbh] = layout.viewBox.split(" ").map(Number);
-  return `
+  const [, , vbw, vbh] = FLOOR_PLAN.viewBox.split(" ").map(Number);
+  floorPlanWrapEl.innerHTML = `
     <div class="floorplan-frame" style="aspect-ratio:${vbw}/${vbh}">
-      <svg class="floorplan-svg" viewBox="${layout.viewBox}" preserveAspectRatio="xMidYMid meet">
+      <svg class="floorplan-svg" viewBox="${FLOOR_PLAN.viewBox}" preserveAspectRatio="xMidYMid meet">
         ${shapesHtml}
       </svg>
+    </div>
+    <div class="floorplan-legend">
+      ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${offices[id].label}</div>`).join("")}
     </div>`;
-}
 
-function renderFloorPlans() {
-  floorPlanWrapEl.innerHTML = officeIds
-    .map(
-      (officeId) => `
-      <div class="office-block">
-        <div class="office-heading">
-          <span class="name">${offices[officeId].label}</span>
-          <span class="count">${offices[officeId].rooms.length} areas</span>
-        </div>
-        ${officeFloorPlanHtml(officeId)}
-      </div>`
-    )
-    .join("");
-
-  floorPlanWrapEl.querySelectorAll("[data-room]").forEach((el) => {
+  floorPlanWrapEl.querySelectorAll(".room-shape").forEach((el) => {
     el.addEventListener("click", () => toggleRoom(el.dataset.office, el.dataset.room));
   });
 }
@@ -136,7 +112,7 @@ function getActiveSelections() {
 function renderSelectedPanel() {
   const active = getActiveSelections();
   if (!active.length) {
-    selectedPanelEl.innerHTML = `<div class="selected-empty">Tap rooms in the floor plans above to add them here.</div>`;
+    selectedPanelEl.innerHTML = `<div class="selected-empty">Tap rooms in the floor plan above to add them here.</div>`;
     return;
   }
 
@@ -221,13 +197,13 @@ document.getElementById("submitBtn").addEventListener("click", () => {
   });
   modalOverlay.classList.remove("open");
   resetSelections();
-  renderFloorPlans();
+  renderFloorPlan();
   renderSelectedPanel();
   renderSummary();
   successBanner.classList.add("open");
   setTimeout(() => successBanner.classList.remove("open"), 4000);
 });
 
-renderFloorPlans();
+renderFloorPlan();
 renderSelectedPanel();
 renderSummary();

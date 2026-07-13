@@ -9,6 +9,8 @@
   --accent-dim: #2f5cc7;
   --good: #35c97a;
   --radius: 12px;
+  --moha: #b99b6b;
+  --malek: #ff4d4d;
 }
 
 html {
@@ -79,24 +81,6 @@ main {
   header.top h1 { font-size: 18px; }
 }
 
-.office-block {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px;
-  background: var(--panel);
-}
-
-.office-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-  padding: 0 4px;
-}
-
-.office-heading .name { font-weight: 700; font-size: 16px; }
-.office-heading .count { font-size: 12px; color: var(--text-dim); }
 
 .room-grid {
   display: grid;
@@ -410,15 +394,16 @@ table.price-table tr:last-child td { border-bottom: none; }
 }
 
 .floorplan-wrap {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: var(--panel);
   margin-bottom: 22px;
 }
 
-.office-block .floorplan-frame {
+.floorplan-frame {
   width: 100%;
-  max-height: 55vh;
+  max-height: 68vh;
   margin: 0 auto;
   display: flex;
   justify-content: center;
@@ -430,13 +415,35 @@ table.price-table tr:last-child td { border-bottom: none; }
   display: block;
 }
 
-@media (min-width: 640px) {
-  .floorplan-wrap { margin-bottom: 26px; }
-  .office-block .floorplan-frame { max-height: 60vh; }
+.floorplan-legend {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
-@media (min-width: 900px) {
-  .floorplan-wrap { grid-template-columns: 1fr 1fr; }
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.legend-item .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+@media (min-width: 640px) {
+  .floorplan-wrap { padding: 20px; margin-bottom: 26px; }
+  .floorplan-frame { max-height: 75vh; }
 }
 
 .room-shape rect {
@@ -447,6 +454,9 @@ table.price-table tr:last-child td { border-bottom: none; }
   transition: fill .15s, stroke .15s;
 }
 
+.room-shape.office-moha rect { stroke: rgba(185, 155, 107, 0.55); }
+.room-shape.office-malek rect { stroke: rgba(255, 77, 77, 0.55); }
+
 .room-shape:hover rect {
   stroke: var(--accent-dim);
 }
@@ -456,6 +466,9 @@ table.price-table tr:last-child td { border-bottom: none; }
   stroke: var(--accent);
   stroke-width: 3;
 }
+
+.legend-item .swatch.office-moha { background: var(--moha); }
+.legend-item .swatch.office-malek { background: var(--malek); }
 
 .room-shape text {
   pointer-events: none;
