@@ -60,7 +60,7 @@ function renderOrders() {
         <div class="office-name">${o.officeName}</div>
         <div class="order-date">${new Date(o.createdAt).toLocaleString()}</div>
       </div>
-      <div class="order-items">${o.items.map((i) => `${i.roomName} (${i.tier})`).join(", ")}</div>
+      <div class="order-items">${o.items.map((i) => `${i.roomName} (${i.tier}) \u00b7 ${i.officeName}`).join(", ")}</div>
       <div class="order-bottom">
         <div class="order-total">$${o.total}</div>
         <div style="display:flex; align-items:center; gap:10px;">
