@@ -48,6 +48,15 @@ function money(n) {
 function fmtMoney(n) {
   return `${money(n)} ${CURRENCY}`;
 }
+// Split a total across n areas so the parts sum EXACTLY to the total
+// (any leftover cents go to the first areas). Works in cents to dodge
+// floating-point drift.
+function splitAmount(total, n) {
+  const cents = Math.round(Number(total) * 100);
+  const base = Math.floor(cents / n);
+  const rem = cents - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i < rem ? 1 : 0)) / 100);
+}
 function fmtDate(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return "";
@@ -510,9 +519,9 @@ function renderComposer() {
       <div class="bid-form">
         <input id="nameInput" class="fld" type="text" placeholder="Your name" value="${esc(nm)}" autocomplete="name" />
         <input id="amtInput" class="fld amt" type="number" inputmode="decimal" min="1" step="1" placeholder="JD" />
-        <button id="addBidBtn" class="btn primary">Add to ${areas.length > 1 ? `each · ${areas.length}` : "pot"}</button>
+        <button id="addBidBtn" class="btn primary">${areas.length > 1 ? "Add to all" : "Add to pot"}</button>
       </div>
-      <div class="composer-note" id="composerNote">${areas.length > 1 ? `Your amount is added to <b>each</b> of the ${areas.length} selected areas.` : ""}</div>
+      <div class="composer-note" id="composerNote">${areas.length > 1 ? `Your amount is the <b>total</b>, split across the ${areas.length} selected areas.` : ""}</div>
       <button id="claimBtn" class="btn claim" ${claimable.length ? "" : "disabled"}>
         ${claimable.length
           ? `Claim ${claimable.length > 1 ? claimable.length + " areas" : "this area"} · collect ${fmtMoney(totalPot)}`
@@ -536,11 +545,11 @@ function renderComposer() {
   amtInput.addEventListener("input", () => {
     const amt = Number(amtInput.value);
     if (amt > 0 && areas.length > 1) {
-      noteEl.innerHTML = `${fmtMoney(amt)} to each · <b>${fmtMoney(amt)} × ${areas.length} = ${fmtMoney(amt * areas.length)}</b> total`;
+      noteEl.innerHTML = `<b>${fmtMoney(amt)}</b> total, split across ${areas.length} areas · ~${fmtMoney(amt / areas.length)} each`;
     } else if (amt > 0) {
       noteEl.innerHTML = `Adds <b>${fmtMoney(amt)}</b> to the pot.`;
     } else {
-      noteEl.innerHTML = areas.length > 1 ? `Your amount is added to <b>each</b> of the ${areas.length} selected areas.` : "";
+      noteEl.innerHTML = areas.length > 1 ? `Your amount is the <b>total</b>, split across the ${areas.length} selected areas.` : "";
     }
   });
   amtInput.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addBidBtn").click(); });
@@ -553,14 +562,19 @@ async function onAddBid(areas, name, amountRaw) {
   if (!name) return toast("Enter your name first");
   if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
   if (!areas.length) return;
+  // The entered amount is the TOTAL for the whole selection, split across
+  // the picked areas (each area keeps its own pot so it can be claimed
+  // on its own). A single area just gets the full amount.
+  const amounts = areas.length > 1 ? splitAmount(amount, areas.length) : [amount];
+  if (amounts.some((v) => v <= 0)) return toast(`That total is too small to split across ${areas.length} areas`);
   setUserName(name);
   updateWhoami();
   try {
-    const rows = areas.map((a) => ({ office_id: a.officeId, room_id: a.roomId, bidder_name: name, amount }));
+    const rows = areas.map((a, i) => ({ office_id: a.officeId, room_id: a.roomId, bidder_name: name, amount: amounts[i] }));
     const { error } = await sb.from("bids").insert(rows);
     if (error) throw error;
     toast(areas.length > 1
-      ? `Added ${fmtMoney(amount)} to each of ${areas.length} areas`
+      ? `Added ${fmtMoney(amount)} across ${areas.length} areas`
       : `Added ${fmtMoney(amount)} to ${roomName(areas[0].officeId, areas[0].roomId)}`);
     await reload();
   } catch (e) {
