@@ -1,11 +1,11 @@
 /* ============================================================
    Cleaning Bids board.
 
-   Areas = the rooms in the floor plan (config.js). Anyone can add money to
-   an area's POT (a bid: amount + name); bids on the same area stack. You
-   can multi-select several areas and place one bid across all of them at
-   once. Claiming an area collects its pot, logs it to history, and clears
-   its bids so it reopens. A live bidders leaderboard sits beside the plan.
+   A BID is one posting: one bidder, one amount, and a SET of rooms it
+   covers ("Malek bids 10 JD to clean Kitchen + Storage + Bathroom"). No
+   splitting, no per-room maths — the amount is for the whole bundle.
+   CLAIMING takes a whole bid (all its rooms), logs it to history, and
+   removes it. You can select individual rooms or a whole office at once.
 
    Data lives in Supabase (supabase.js); the board subscribes to realtime
    changes so every device updates the moment someone bids or claims.
@@ -15,9 +15,9 @@ const offices = OFFICES;
 const officeIds = Object.keys(offices);
 
 // ---- live data from Supabase ----
-let bids = [];       // { id, office_id, room_id, bidder_name, amount, created_at }
-let claims = [];     // { id, office_id, room_id, claimed_by, total_amount, contributors, created_at }
-const selectedKeys = new Set(); // "officeId:roomId"
+let bids = [];    // { id, bidder_name, amount, rooms:[{office,room}], created_at }
+let claims = [];  // { id, bidder_name, amount, rooms, claimed_by, created_at }
+const selectedKeys = new Set(); // "officeId:roomId" currently selected for a new bid
 
 // ---- who am I (just a name, stored locally) ----
 function userName() { return (localStorage.getItem("bidder_name") || "").trim(); }
@@ -27,6 +27,7 @@ function setUserName(n) { localStorage.setItem("bidder_name", (n || "").trim());
 const floorPlanWrapEl = document.getElementById("floorPlanWrap");
 const composerEl = document.getElementById("composer");
 const dashboardEl = document.getElementById("dashboard");
+const openBidsEl = document.getElementById("openBids");
 const historyListEl = document.getElementById("historyList");
 const toastEl = document.getElementById("toast");
 const userNameLabel = document.getElementById("userNameLabel");
@@ -45,18 +46,7 @@ function money(n) {
   const v = Number(n) || 0;
   return Number.isInteger(v) ? String(v) : v.toFixed(2);
 }
-function fmtMoney(n) {
-  return `${money(n)} ${CURRENCY}`;
-}
-// Split a total across n areas so the parts sum EXACTLY to the total
-// (any leftover cents go to the first areas). Works in cents to dodge
-// floating-point drift.
-function splitAmount(total, n) {
-  const cents = Math.round(Number(total) * 100);
-  const base = Math.floor(cents / n);
-  const rem = cents - base * n;
-  return Array.from({ length: n }, (_, i) => (base + (i < rem ? 1 : 0)) / 100);
-}
+function fmtMoney(n) { return `${money(n)} ${CURRENCY}`; }
 function fmtDate(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return "";
@@ -65,21 +55,22 @@ function fmtDate(iso) {
 function roomName(officeId, roomId) {
   return offices[officeId]?.rooms.find((r) => r.id === roomId)?.name ?? roomId;
 }
-function officeLabel(officeId) {
-  return offices[officeId]?.label ?? officeId;
-}
-function areaBids(officeId, roomId) {
-  return bids.filter((b) => b.office_id === officeId && b.room_id === roomId);
-}
-function potFor(officeId, roomId) {
-  return areaBids(officeId, roomId).reduce((s, b) => s + Number(b.amount), 0);
-}
+function officeLabel(officeId) { return offices[officeId]?.label ?? officeId; }
 function keyOf(officeId, roomId) { return `${officeId}:${roomId}`; }
 function selectedAreas() {
   return [...selectedKeys].map((k) => {
     const i = k.indexOf(":");
     return { officeId: k.slice(0, i), roomId: k.slice(i + 1) };
   });
+}
+function bidsCoveringRoom(officeId, roomId) {
+  return bids.filter((b) => (b.rooms || []).some((x) => x.office === officeId && x.room === roomId));
+}
+function roomOffered(officeId, roomId) {
+  return bidsCoveringRoom(officeId, roomId).reduce((s, b) => s + Number(b.amount), 0);
+}
+function roomsLabel(rooms) {
+  return (rooms || []).map((x) => roomName(x.office, x.room)).join(", ");
 }
 function initials(name) {
   const p = name.trim().split(/\s+/);
@@ -100,7 +91,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3200);
 }
 
-// Animated count-up for a number element (used for the header pot total).
+// Animated count-up for the header pot total.
 function setNumber(el, to) {
   const from = Number(el.dataset.val || 0);
   to = Number(to) || 0;
@@ -121,8 +112,8 @@ function setNumber(el, to) {
 
 /* ============================================================
    Isometric "dollhouse" renderer (geometry from config.js is ground
-   truth; this only controls how it's drawn). Selecting an area lifts its
-   slab; areas with a pot glow gold.
+   truth; this only controls how it's drawn). Selecting a room lifts its
+   slab; rooms with a bid on them glow gold.
    ============================================================ */
 
 const ISO_BASE = 16, ISO_LIFT = 22, WALL_H = 54, WALL_T = 12;
@@ -412,7 +403,7 @@ function buildScene() {
       </svg>
     </div>
     <div class="floorplan-legend">
-      ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${esc(offices[id].label)}</div>`).join("")}
+      ${officeIds.map((id) => `<button class="legend-item" data-office="${id}" title="Select all of ${esc(offices[id].label)}"><span class="swatch office-${id}"></span>${esc(offices[id].label)}</button>`).join("")}
     </div>`;
 
   isoScene = { shapeEls: new Map() };
@@ -425,6 +416,9 @@ function buildScene() {
     const labelG = svg.querySelector(`.room-label-g[data-office="${s.officeId}"][data-room="${s.id}"]`);
     isoScene.shapeEls.set(i, { shape: s, group, polyEls, labelG, tagEl: labelG ? labelG.querySelector(".room-price-tag") : null });
     if (!s.deco) group.addEventListener("click", () => toggleArea(s.officeId, s.id));
+  });
+  floorPlanWrapEl.querySelectorAll(".legend-item").forEach((el) => {
+    el.addEventListener("click", () => toggleOffice(el.dataset.office));
   });
 }
 
@@ -459,20 +453,27 @@ function renderFloorPlan() {
   for (const s of FLOOR_PLAN.shapes) {
     const entry = isoScene.shapeEls.get(s.__i);
     const sel = isSelected(s.officeId, s.id);
-    const pot = potFor(s.officeId, s.id);
+    const offered = roomOffered(s.officeId, s.id);
     entry.group.classList.toggle("selected", sel);
-    entry.group.classList.toggle("has-pot", pot > 0 && !sel);
+    entry.group.classList.toggle("has-pot", offered > 0 && !sel);
     if (entry.labelG) {
       entry.labelG.classList.toggle("selected", sel);
-      entry.labelG.classList.toggle("has-pot", pot > 0 && !sel);
-      if (entry.tagEl) entry.tagEl.textContent = pot > 0 ? fmtMoney(pot) : "";
+      entry.labelG.classList.toggle("has-pot", offered > 0 && !sel);
+      if (entry.tagEl) entry.tagEl.textContent = offered > 0 ? fmtMoney(offered) : "";
     }
   }
+  // office legend active state (all its rooms selected)
+  floorPlanWrapEl.querySelectorAll(".legend-item").forEach((el) => {
+    const oid = el.dataset.office;
+    const rooms = offices[oid].rooms.map((r) => r.id);
+    const all = rooms.length > 0 && rooms.every((rid) => selectedKeys.has(keyOf(oid, rid)));
+    el.classList.toggle("active", all);
+  });
   startLiftTween();
 }
 
 /* ============================================================
-   Selection + composer (multi-area bidding & claiming)
+   Selection + composer (build one bundled bid)
    ============================================================ */
 
 function toggleArea(officeId, roomId) {
@@ -483,53 +484,56 @@ function toggleArea(officeId, roomId) {
   renderComposer();
 }
 
+function toggleOffice(officeId) {
+  const rooms = offices[officeId].rooms.map((r) => r.id);
+  const all = rooms.every((rid) => selectedKeys.has(keyOf(officeId, rid)));
+  rooms.forEach((rid) => {
+    const k = keyOf(officeId, rid);
+    if (all) selectedKeys.delete(k);
+    else selectedKeys.add(k);
+  });
+  renderFloorPlan();
+  renderComposer();
+}
+
+function composerBeingTyped() {
+  const a = document.activeElement;
+  return a && composerEl.contains(a) && a.tagName === "INPUT";
+}
+
 function renderComposer() {
   const areas = selectedAreas();
-  if (selHintEl) selHintEl.textContent = areas.length
-    ? `${areas.length} selected`
-    : "Tap areas to select";
+  if (selHintEl) selHintEl.textContent = areas.length ? `${areas.length} selected` : "Tap areas to select";
 
   if (!areas.length) {
     composerEl.innerHTML = `
       <div class="composer-empty">
-        <div class="ce-title">Nothing selected yet</div>
-        <div class="ce-sub">Tap one or more areas on the plan. Pick a few and back them all with a single bid, or claim a pot to go clean it.</div>
+        <div class="ce-title">Place a bid</div>
+        <div class="ce-sub">Tap rooms on the plan (or a whole office in the legend), then name one amount to bid on all of them together.</div>
       </div>`;
     return;
   }
 
   const nm = userName();
-  const totalPot = areas.reduce((s, a) => s + potFor(a.officeId, a.roomId), 0);
-  const claimable = areas.filter((a) => potFor(a.officeId, a.roomId) > 0);
   const chips = areas
-    .map((a) => {
-      const pot = potFor(a.officeId, a.roomId);
-      return `<button class="area-chip" data-key="${a.officeId}:${a.roomId}" title="Remove">
+    .map((a) => `<button class="area-chip" data-key="${a.officeId}:${a.roomId}" title="Remove">
         <span class="ac-name">${esc(roomName(a.officeId, a.roomId))}</span>
-        ${pot > 0 ? `<span class="ac-pot">${fmtMoney(pot)}</span>` : ""}
         <span class="ac-x">×</span>
-      </button>`;
-    })
+      </button>`)
     .join("");
 
   composerEl.innerHTML = `
-    <div class="card-head"><span>Your selection</span><span class="hint">${areas.length} area${areas.length > 1 ? "s" : ""}</span></div>
+    <div class="card-head"><span>Your bid</span><span class="hint">${areas.length} area${areas.length > 1 ? "s" : ""}</span></div>
     <div class="card-body">
       <div class="area-chips">${chips}</div>
       <div class="bid-form">
         <input id="nameInput" class="fld" type="text" placeholder="Your name" value="${esc(nm)}" autocomplete="name" />
-        <input id="amtInput" class="fld amt" type="number" inputmode="decimal" min="1" step="1" placeholder="JD" />
-        <button id="addBidBtn" class="btn primary">${areas.length > 1 ? "Add to all" : "Add to pot"}</button>
+        <input id="amtInput" class="fld amt" type="number" inputmode="decimal" min="1" step="1" placeholder="Amount" />
+        <button id="addBidBtn" class="btn primary">Place bid</button>
       </div>
-      <div class="composer-note" id="composerNote">${areas.length > 1 ? `Your amount is the <b>total</b>, split across the ${areas.length} selected areas.` : ""}</div>
-      <button id="claimBtn" class="btn claim" ${claimable.length ? "" : "disabled"}>
-        ${claimable.length
-          ? `Claim ${claimable.length > 1 ? claimable.length + " areas" : "this area"} · collect ${fmtMoney(totalPot)}`
-          : "No pot to claim yet"}
-      </button>
+      <div class="composer-note" id="composerNote">${areas.length > 1 ? `One bid covering all ${areas.length} selected areas.` : ""}</div>
     </div>`;
 
-  // wire chip removal
   composerEl.querySelectorAll(".area-chip").forEach((el) => {
     el.addEventListener("click", () => {
       selectedKeys.delete(el.dataset.key);
@@ -544,61 +548,82 @@ function renderComposer() {
   nameInput.addEventListener("change", () => { setUserName(nameInput.value); updateWhoami(); });
   amtInput.addEventListener("input", () => {
     const amt = Number(amtInput.value);
-    if (amt > 0 && areas.length > 1) {
-      noteEl.innerHTML = `<b>${fmtMoney(amt)}</b> total, split across ${areas.length} areas · ~${fmtMoney(amt / areas.length)} each`;
-    } else if (amt > 0) {
-      noteEl.innerHTML = `Adds <b>${fmtMoney(amt)}</b> to the pot.`;
+    const who = nameInput.value.trim() || "You";
+    if (amt > 0) {
+      noteEl.innerHTML = `<b>${esc(who)}</b> bids <b>${fmtMoney(amt)}</b> for ${areas.length > 1 ? `all ${areas.length} areas` : "this area"}.`;
     } else {
-      noteEl.innerHTML = areas.length > 1 ? `Your amount is the <b>total</b>, split across the ${areas.length} selected areas.` : "";
+      noteEl.innerHTML = areas.length > 1 ? `One bid covering all ${areas.length} selected areas.` : "";
     }
   });
   amtInput.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addBidBtn").click(); });
-  document.getElementById("addBidBtn").addEventListener("click", () => onAddBid(areas, nameInput.value.trim(), amtInput.value));
-  document.getElementById("claimBtn").addEventListener("click", () => onClaim(areas, nameInput.value.trim()));
+  document.getElementById("addBidBtn").addEventListener("click", () => onPlaceBid(areas, nameInput.value.trim(), amtInput.value));
 }
 
-async function onAddBid(areas, name, amountRaw) {
+async function onPlaceBid(areas, name, amountRaw) {
   const amount = Number(amountRaw);
   if (!name) return toast("Enter your name first");
   if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
   if (!areas.length) return;
-  // The entered amount is the TOTAL for the whole selection, split across
-  // the picked areas (each area keeps its own pot so it can be claimed
-  // on its own). A single area just gets the full amount.
-  const amounts = areas.length > 1 ? splitAmount(amount, areas.length) : [amount];
-  if (amounts.some((v) => v <= 0)) return toast(`That total is too small to split across ${areas.length} areas`);
   setUserName(name);
   updateWhoami();
   try {
-    const rows = areas.map((a, i) => ({ office_id: a.officeId, room_id: a.roomId, bidder_name: name, amount: amounts[i] }));
-    const { error } = await sb.from("bids").insert(rows);
+    const rooms = areas.map((a) => ({ office: a.officeId, room: a.roomId }));
+    const { error } = await sb.from("bids").insert({ bidder_name: name, amount, rooms });
     if (error) throw error;
-    toast(areas.length > 1
-      ? `Added ${fmtMoney(amount)} across ${areas.length} areas`
-      : `Added ${fmtMoney(amount)} to ${roomName(areas[0].officeId, areas[0].roomId)}`);
+    toast(`Bid placed: ${fmtMoney(amount)} for ${areas.length} area${areas.length > 1 ? "s" : ""}`);
+    selectedKeys.clear();
     await reload();
   } catch (e) {
-    toast("Could not add bid: " + (e.message || e));
+    toast("Could not place bid: " + (e.message || e));
   }
 }
 
-async function onClaim(areas, name) {
-  const claimable = areas.filter((a) => potFor(a.officeId, a.roomId) > 0);
-  if (!claimable.length) return;
+/* ============================================================
+   Open bids (claimable postings)
+   ============================================================ */
+
+function renderOpenBids() {
+  if (!bids.length) {
+    openBidsEl.innerHTML = `<div class="empty-block">No open bids yet. Select some rooms above and place one.</div>`;
+    return;
+  }
+  const sorted = [...bids].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  openBidsEl.innerHTML = sorted
+    .map((b) => `
+      <div class="bid-card">
+        <div class="bid-top">
+          <div class="bid-who">
+            <div class="bid-avatar" style="--h:${hashHue(b.bidder_name)}">${esc(initials(b.bidder_name))}</div>
+            <div class="bid-name">${esc(b.bidder_name)}</div>
+          </div>
+          <div class="bid-amt">${fmtMoney(b.amount)}</div>
+        </div>
+        <div class="bid-rooms">${esc(roomsLabel(b.rooms))}</div>
+        <button class="btn claim small" data-bid="${b.id}">Claim &amp; clean</button>
+      </div>`)
+    .join("");
+
+  openBidsEl.querySelectorAll("[data-bid]").forEach((el) => {
+    const bid = bids.find((b) => b.id === el.dataset.bid);
+    if (bid) el.addEventListener("click", () => onClaimBid(bid));
+  });
+}
+
+async function onClaimBid(bid) {
+  let name = userName();
+  if (!name) {
+    const entered = prompt("Your name to claim this bid:", "");
+    if (entered == null) return;
+    name = entered.trim();
+    setUserName(name);
+    updateWhoami();
+  }
   if (!name) return toast("Enter your name first");
-  const total = claimable.reduce((s, a) => s + potFor(a.officeId, a.roomId), 0);
-  const names = claimable.map((a) => roomName(a.officeId, a.roomId)).join(", ");
-  const label = claimable.length > 1 ? `${claimable.length} areas (${names})` : names;
-  if (!confirm(`Claim ${label} and collect ${fmtMoney(total)}? You'll go and clean ${claimable.length > 1 ? "them" : "it"}.`)) return;
-  setUserName(name);
-  updateWhoami();
+  if (!confirm(`Claim ${bid.bidder_name}'s bid of ${fmtMoney(bid.amount)} and clean ${roomsLabel(bid.rooms)}?`)) return;
   try {
-    for (const a of claimable) {
-      const { error } = await sb.rpc("claim_area", { p_office_id: a.officeId, p_room_id: a.roomId, p_claimed_by: name });
-      if (error) throw error;
-      selectedKeys.delete(keyOf(a.officeId, a.roomId));
-    }
-    toast(`You claimed ${claimable.length > 1 ? claimable.length + " areas" : names} · ${fmtMoney(total)}`);
+    const { error } = await sb.rpc("claim_bid", { p_bid_id: bid.id, p_claimed_by: name });
+    if (error) throw error;
+    toast(`You claimed ${roomsLabel(bid.rooms)} · ${fmtMoney(bid.amount)}`);
     await reload();
   } catch (e) {
     toast("Could not claim: " + (e.message || e));
@@ -607,19 +632,19 @@ async function onClaim(areas, name) {
 }
 
 /* ============================================================
-   Bidders dashboard (live leaderboard)
+   Bidders leaderboard
    ============================================================ */
 
 function renderDashboard() {
-  const map = new Map(); // name -> { amount, areas:Set }
+  const map = new Map(); // name -> { amount, rooms:Set }
   for (const b of bids) {
-    const cur = map.get(b.bidder_name) || { amount: 0, areas: new Set() };
+    const cur = map.get(b.bidder_name) || { amount: 0, rooms: new Set() };
     cur.amount += Number(b.amount);
-    cur.areas.add(keyOf(b.office_id, b.room_id));
+    (b.rooms || []).forEach((x) => cur.rooms.add(keyOf(x.office, x.room)));
     map.set(b.bidder_name, cur);
   }
   const rows = [...map.entries()]
-    .map(([name, v]) => ({ name, amount: v.amount, areas: v.areas.size }))
+    .map(([name, v]) => ({ name, amount: v.amount, rooms: v.rooms.size }))
     .sort((a, b) => b.amount - a.amount);
   const max = rows.length ? rows[0].amount : 0;
   const totalPledged = rows.reduce((s, r) => s + r.amount, 0);
@@ -635,10 +660,10 @@ function renderDashboard() {
           </div>
           <div class="lb-meta">
             <div class="lb-amt">${fmtMoney(r.amount)}</div>
-            <div class="lb-areas">${r.areas} area${r.areas > 1 ? "s" : ""}</div>
+            <div class="lb-areas">${r.rooms} room${r.rooms > 1 ? "s" : ""}</div>
           </div>
         </div>`).join("")
-    : `<div class="lb-empty">No bids yet. Be the first to back an area.</div>`;
+    : `<div class="lb-empty">No bids yet. Be the first to back some rooms.</div>`;
 
   dashboardEl.innerHTML = `
     <div class="card-head"><span>Bidders</span><span class="hint">${rows.length}</span></div>
@@ -652,21 +677,18 @@ function renderDashboard() {
 
 function renderHistory() {
   if (!claims.length) {
-    historyListEl.innerHTML = `<div class="history-empty">No areas claimed yet. Once a pot is worth it, someone claims it here.</div>`;
+    historyListEl.innerHTML = `<div class="empty-block">No bids claimed yet. Once someone takes a bid, it lands here.</div>`;
     return;
   }
   historyListEl.innerHTML = claims
-    .map((c) => {
-      const contribs = (c.contributors || []).map((x) => `${esc(x.name)} ${fmtMoney(x.amount)}`).join(", ");
-      return `<div class="history-card">
+    .map((c) => `<div class="history-card">
         <div class="history-top">
-          <div class="history-area">${esc(roomName(c.office_id, c.room_id))}<span class="room-office-tag">${esc(officeLabel(c.office_id))}</span></div>
-          <div class="history-amt">${fmtMoney(c.total_amount)}</div>
+          <div class="history-area">${esc(roomsLabel(c.rooms))}</div>
+          <div class="history-amt">${fmtMoney(c.amount)}</div>
         </div>
-        <div class="history-sub">Claimed by <b>${esc(c.claimed_by)}</b> · ${esc(fmtDate(c.created_at))}</div>
-        ${contribs ? `<div class="history-contribs">from ${contribs}</div>` : ""}
-      </div>`;
-    })
+        <div class="history-sub">Bid by <b>${esc(c.bidder_name)}</b> · claimed by <b>${esc(c.claimed_by)}</b></div>
+        <div class="history-contribs">${esc(fmtDate(c.created_at))}</div>
+      </div>`)
     .join("");
 }
 
@@ -676,21 +698,15 @@ function renderHistory() {
 
 function updateStats() {
   const total = bids.reduce((s, b) => s + Number(b.amount), 0);
-  const areaCount = new Set(bids.map((b) => keyOf(b.office_id, b.room_id))).size;
+  const areaCount = new Set(bids.flatMap((b) => (b.rooms || []).map((x) => keyOf(x.office, x.room)))).size;
   if (statTotalEl) setNumber(statTotalEl, total);
   if (statAreasEl) statAreasEl.textContent = areaCount;
-}
-
-// Don't rebuild the composer out from under someone who's typing in it
-// (a realtime reload from another person's bid must not wipe their input).
-function composerBeingTyped() {
-  const a = document.activeElement;
-  return a && composerEl.contains(a) && a.tagName === "INPUT";
 }
 
 function render() {
   renderFloorPlan();
   if (!composerBeingTyped()) renderComposer();
+  renderOpenBids();
   renderDashboard();
   renderHistory();
   updateStats();
