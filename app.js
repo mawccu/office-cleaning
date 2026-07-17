@@ -457,7 +457,6 @@ function buildScene() {
     </div>
     <div class="floorplan-legend">
       ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${offices[id].label}</div>`).join("")}
-      <div class="legend-item"><span class="swatch office-hall"></span>Shared Hall</div>
     </div>`;
 
   // Keyed per SHAPE INSTANCE (s.__i), not per room — a multi-piece room
@@ -562,7 +561,7 @@ function renderSelectedPanel() {
       (a) => `
     <div class="room-card selected">
       <div class="room-head" data-remove-office="${a.officeId}" data-remove="${a.roomId}">
-        <div class="room-name">${a.roomName}<span class="room-office-tag">${a.officeName}</span></div>
+        <div class="room-name">${a.roomName}${a.officeName !== a.roomName ? `<span class="room-office-tag">${a.officeName}</span>` : ""}</div>
         <div class="checkbox"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>
       </div>
       <div class="tier-row">
@@ -608,7 +607,7 @@ confirmBtn.addEventListener("click", () => {
       (a) => `
       <div class="modal-line">
         <div>
-          <div class="room">${a.roomName}<span class="tier"> · ${a.officeName}</span></div>
+          <div class="room">${a.roomName}${a.officeName !== a.roomName ? `<span class="tier"> · ${a.officeName}</span>` : ""}</div>
           <div class="tier">${tierLabel(a.tier)} clean</div>
         </div>
         <div class="price">$${a.price}</div>

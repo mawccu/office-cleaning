@@ -33,6 +33,19 @@ const DEFAULT_OFFICES = {
       { id: "desks", name: "Desks" },
     ],
   },
+  // The entrance hall between the two offices (blue strip in the
+  // reference) — its own group since it belongs to neither office, but
+  // it gets cleaned like any room.
+  hall: {
+    label: "Hall",
+    rooms: [{ id: "hall", name: "Hall" }],
+  },
+  // Outdoor square off the south side of Malek's Desks, reached through
+  // a door in the south wall. Also gets cleaned.
+  outside: {
+    label: "Outside",
+    rooms: [{ id: "outside", name: "Outside" }],
+  },
 };
 
 // Single combined floor plan — one map, traced 1:1 from the reference
@@ -51,9 +64,13 @@ const FLOOR_PLAN = {
     // Carved into the NE corner of Desks; its east edge borders the hall.
     { officeId: "moha", id: "bathroom", x: 954, y: 475, w: 140, h: 286 },
 
-    // Shared entrance hall between the two offices (blue in the
-    // reference) — from the Kitchen's south wall down to the street door.
-    { officeId: "hall", id: "hall", x: 1094, y: 460, w: 168, h: 567, deco: true, label: false },
+    // Entrance hall between the two offices (blue in the reference) —
+    // from the Kitchen's south wall down to the building's south wall.
+    { officeId: "hall", id: "hall", x: 1094, y: 460, w: 168, h: 567 },
+
+    // Outdoor square off the south side of Malek's Desks — no walls of
+    // its own, just an open terrace slab outside the building.
+    { officeId: "outside", id: "outside", x: 1292, y: 1027, w: 300, h: 300 },
 
     // Kitchen is the WIDER of the two top rooms (divider at x=1337);
     // its label is nudged NW so it clears the Dishwashing corner room.
@@ -93,8 +110,8 @@ const FLOOR_PLAN = {
     // --- Malek's Office ---
     { x1: 966, y1: 118, x2: 1621, y2: 118 },
     { x1: 1621, y1: 118, x2: 1621, y2: 1027 },
-    // South wall — solid (no exterior door drawn on the model)
-    { x1: 1621, y1: 1027, x2: 1094, y2: 1027 },
+    // South wall — one doorway from Desks out to the Outside square
+    { x1: 1621, y1: 1027, x2: 1094, y2: 1027, doorGap: [1400, 1480] },
     // West wall stops at the kitchen — below y=460 it's Moha's side + hall.
     // At x=966 it sits flush against Moha's east wall (x=954, both 12
     // thick) so the pair reads as ONE thick shared wall, not two walls
@@ -133,6 +150,12 @@ const DEFAULT_PRICES = {
     bathroom: { quick: 4, standard: 7, deep: 12 },
     desks: { quick: 5, standard: 9, deep: 15 },
   },
+  hall: {
+    hall: { quick: 3, standard: 5, deep: 9 },
+  },
+  outside: {
+    outside: { quick: 4, standard: 7, deep: 12 },
+  },
 };
 
 const STORAGE_KEYS = {
@@ -148,7 +171,11 @@ const Store = {
   },
   getPrices() {
     const raw = localStorage.getItem(STORAGE_KEYS.prices);
-    return raw ? JSON.parse(raw) : structuredClone(DEFAULT_PRICES);
+    // Merge saved prices over defaults so areas added after the user
+    // last saved (e.g. Hall, Outside) still get their default prices.
+    return raw
+      ? { ...structuredClone(DEFAULT_PRICES), ...JSON.parse(raw) }
+      : structuredClone(DEFAULT_PRICES);
   },
   savePrices(prices) {
     localStorage.setItem(STORAGE_KEYS.prices, JSON.stringify(prices));
