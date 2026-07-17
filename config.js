@@ -68,9 +68,9 @@ const FLOOR_PLAN = {
     // from the Kitchen's south wall down to the building's south wall.
     { officeId: "hall", id: "hall", x: 1094, y: 460, w: 168, h: 567 },
 
-    // Outdoor square off the south side of Malek's Desks — no walls of
-    // its own, just an open terrace slab outside the building.
-    { officeId: "outside", id: "outside", x: 1292, y: 1027, w: 300, h: 300 },
+    // Outdoor terrace running the FULL south side of the building (both
+    // offices) — no walls of its own, just an open slab outside.
+    { officeId: "outside", id: "outside", x: 656, y: 1027, w: 965, h: 300 },
 
     // Kitchen is the WIDER of the two top rooms (divider at x=1337);
     // its label is nudged NW so it clears the Dishwashing corner room.
@@ -96,8 +96,8 @@ const FLOOR_PLAN = {
     { x1: 954, y1: 50, x2: 954, y2: 475 },
     { x1: 954, y1: 475, x2: 1094, y2: 475 },
     { x1: 1094, y1: 475, x2: 1094, y2: 1027 },
-    // South wall — solid (no exterior door drawn on the model)
-    { x1: 1094, y1: 1027, x2: 656, y2: 1027 },
+    // South wall — doorway out to the Outside terrace
+    { x1: 1094, y1: 1027, x2: 656, y2: 1027, doorGap: [958, 1000] },
     { x1: 656, y1: 1027, x2: 656, y2: 289 },
     { x1: 656, y1: 289, x2: 430, y2: 289 },
     { x1: 430, y1: 289, x2: 430, y2: 50 },
