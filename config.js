@@ -21,13 +21,10 @@ const DEFAULT_OFFICES = {
   },
   malek: {
     label: "Malek's Office",
-    // Kitchen at top-left, Storage at top-right. Below them: two small
-    // rooms are both built like bathrooms in the real blueprint — the one
-    // directly under Kitchen got repurposed as the Dishwashing Area, the
-    // one under Storage stayed the Bathroom. Desks is everything else:
-    // the real blueprint labels that whole lower area "Sala" (hall/lounge)
-    // — one open room wrapping around both small rooms, not a separate
-    // hallway plus a separate desks room.
+    // Kitchen (the wider room) at top-left, with the Dishwashing Area
+    // walled off in its corner beside the hall door; Storage top-right.
+    // Below them, Desks is the whole open area east of the shared hall,
+    // with the Bathroom carved out against the east wall under Storage.
     rooms: [
       { id: "kitchen", name: "Kitchen" },
       { id: "storage", name: "Storage" },
@@ -58,16 +55,16 @@ const FLOOR_PLAN = {
     // reference) — from the Kitchen's south wall down to the street door.
     { officeId: "hall", id: "hall", x: 1094, y: 460, w: 168, h: 567, deco: true, label: false },
 
-    // Kitchen is the WIDER of the two top rooms (divider at x=1337).
-    { officeId: "malek", id: "kitchen", x: 976, y: 118, w: 355, h: 342 },
+    // Kitchen is the WIDER of the two top rooms (divider at x=1337);
+    // its label is nudged NW so it clears the Dishwashing corner room.
+    { officeId: "malek", id: "kitchen", x: 976, y: 118, w: 355, h: 342, lx: 1120, ly: 265 },
     { officeId: "malek", id: "storage", x: 1343, y: 118, w: 278, h: 342 },
-    // Desks = everything right of the hall, drawn first so Dishwashing
-    // and Bathroom sit on top of it as their own small enclosed rooms
-    // (both noticeably smaller than the desk space wrapping around them).
+    // Desks = everything right of the hall, drawn first so the Bathroom
+    // sits on top of it as its own small enclosed room.
     { officeId: "malek", id: "desks", x: 1262, y: 460, w: 359, h: 567 },
-    // Tucked between the hall and Desks, straddling the Kitchen/Storage
-    // divider line above it — door facing east into Desks.
-    { officeId: "malek", id: "dishwashing", x: 1262, y: 460, w: 128, h: 190 },
+    // Corner room walled off INSIDE the Kitchen, right beside the hall
+    // door — its own west + north walls, door facing the kitchen.
+    { officeId: "malek", id: "dishwashing", x: 1203, y: 330, w: 128, h: 130 },
     // On the far east wall, under Storage — door facing west into Desks.
     { officeId: "malek", id: "bathroom", x: 1495, y: 460, w: 126, h: 212 },
   ],
@@ -102,17 +99,17 @@ const FLOOR_PLAN = {
     { x1: 976, y1: 118, x2: 976, y2: 460 },
     // Kitchen / Storage divider (solid; kitchen is the wider room)
     { x1: 1337, y1: 118, x2: 1337, y2: 460 },
-    // Kitchen south wall (door into the hall) running on over Dishwashing
-    { x1: 976, y1: 460, x2: 1390, y2: 460, doorGap: [1130, 1215] },
+    // Kitchen south wall — the hall doorway sits just west of the
+    // Dishwashing corner room so its west wall lands on the door jamb
+    { x1: 976, y1: 460, x2: 1337, y2: 460, doorGap: [1120, 1197] },
     // Storage south wall (door into the Desks strip below it)
-    { x1: 1390, y1: 460, x2: 1621, y2: 460, doorGap: [1425, 1490] },
-    // Hall east wall: solid beside Dishwashing, then a doorway into Desks
-    // near its south end
-    { x1: 1262, y1: 460, x2: 1262, y2: 650 },
-    { x1: 1262, y1: 650, x2: 1262, y2: 1027, doorGap: [945, 1015] },
-    // Dishwashing Area (door on the east wall into Desks)
-    { x1: 1390, y1: 460, x2: 1390, y2: 650, doorGap: [560, 630] },
-    { x1: 1262, y1: 650, x2: 1390, y2: 650 },
+    { x1: 1337, y1: 460, x2: 1621, y2: 460, doorGap: [1425, 1490] },
+    // Hall east wall, with a doorway into Desks near its south end
+    { x1: 1262, y1: 460, x2: 1262, y2: 1027, doorGap: [945, 1015] },
+    // Dishwashing Area: corner room tucked inside the Kitchen beside the
+    // hall door — west + north walls, door on the west facing the kitchen
+    { x1: 1203, y1: 330, x2: 1203, y2: 460, doorGap: [370, 440] },
+    { x1: 1203, y1: 330, x2: 1331, y2: 330 },
     // Bathroom (door on the west wall into Desks)
     { x1: 1495, y1: 460, x2: 1495, y2: 672, doorGap: [560, 640] },
     { x1: 1495, y1: 672, x2: 1621, y2: 672 },

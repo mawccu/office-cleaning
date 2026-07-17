@@ -77,13 +77,14 @@ const PLATE_RENDER = {
   // stretch borders the hall directly) — split the face: the north part
   // drops to ground, the south part stops at the Desks slab top.
   "moha:bathroom": { parent: "desks", pad: 0, southBottom: "parent", eastSplit: 532 },
-  // Dishwashing Area and Malek's Bathroom are real enclosed rooms carved
-  // out of the (much bigger) Desks footprint — both of their south edges
-  // border Desks, and Dishwashing's east edge does too. Dishwashing's
-  // west edge borders the hall, but west faces are never drawn in this
-  // projection. Malek's Bathroom's east edge is the building's real
+  // Dishwashing Area is a small corner room walled off INSIDE the
+  // Kitchen (beside the hall door), so it sits on the Kitchen's slab and
+  // rides its lift; its south + east edges both stop at the Kitchen's
+  // boundary, where the Kitchen's own skirt takes over below.
+  "malek:dishwashing": { parent: "kitchen", pad: 0, southBottom: "parent", eastBottom: "parent" },
+  // Malek's Bathroom is carved out of the (much bigger) Desks footprint —
+  // its south edge borders Desks; its east edge is the building's real
   // exterior, so it's left as ground.
-  "malek:dishwashing": { parent: "desks", pad: 0, southBottom: "parent", eastBottom: "parent" },
   "malek:bathroom": { parent: "desks", pad: 0, southBottom: "parent" },
 };
 
@@ -199,6 +200,38 @@ function plateGeom(s) {
   } else {
     polys.top = [isoPt(s.x, s.y, top), isoPt(x2, s.y, top), isoPt(x2, y2, top), isoPt(s.x, y2, top)];
   }
+  // Pieces of a multi-piece room only get side faces along the room's
+  // OUTER boundary. Without this, the wide half of the L-shaped Chill
+  // Area painted its full south skirt straight across the stem piece's
+  // floor — a dark band through the middle of the room. Cut away any
+  // stretch of a face where a sibling piece continues past that edge.
+  const siblings = FLOOR_PLAN.shapes.filter((o) => o !== s && shapeKey(o) === key);
+  if (siblings.length) {
+    const cut = (lo, hi, cuts) => {
+      let spans = [[lo, hi]];
+      for (const [a, b] of cuts) {
+        spans = spans.flatMap(([p, q]) => {
+          const c = Math.max(p, a), d = Math.min(q, b);
+          if (c >= d) return [[p, q]];
+          const keep = [];
+          if (p < c) keep.push([p, c]);
+          if (d < q) keep.push([d, q]);
+          return keep;
+        });
+      }
+      return spans;
+    };
+    const southCuts = siblings.filter((o) => o.y === y2).map((o) => [o.x, o.x + o.w]);
+    cut(s.x, x2, southCuts).forEach(([a, b], i) => {
+      polys["south" + (i || "")] = [isoPt(a, y2, top), isoPt(b, y2, top), isoPt(b, y2, 0), isoPt(a, y2, 0)];
+    });
+    const eastCuts = siblings.filter((o) => o.x === x2).map((o) => [o.y, o.y + o.h]);
+    cut(s.y, y2, eastCuts).forEach(([a, b], i) => {
+      polys["east" + (i || "")] = [isoPt(x2, a, top), isoPt(x2, b, top), isoPt(x2, b, 0), isoPt(x2, a, 0)];
+    });
+    return { polys, top };
+  }
+
   const southBottom = cfg?.southBottom === "parent" ? parentTop : 0;
   polys.south = [isoPt(s.x, y2, top), isoPt(x2, y2, top), isoPt(x2, y2, southBottom), isoPt(s.x, y2, southBottom)];
 
@@ -366,7 +399,7 @@ function buildScene() {
     .map((s) => {
       const { polys } = plateGeom(s);
       const faces = Object.entries(polys)
-        .map(([face, p]) => `<polygon class="f-${face === "east2" ? "east" : face}" data-face="${face}" points="${ptsAttr(p)}"></polygon>`)
+        .map(([face, p]) => `<polygon class="f-${face.replace(/\d+$/, "")}" data-face="${face}" points="${ptsAttr(p)}"></polygon>`)
         .join("");
       const pad = (PLATE_RENDER[shapeKey(s)]?.pad ?? 0) > 0 ? " pad" : "";
       const deco = s.deco ? " deco" : "";
@@ -388,7 +421,9 @@ function buildScene() {
   const labelsHtml = FLOOR_PLAN.shapes
     .filter((s) => s.label !== false)
     .map((s) => {
-      const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+      // lx/ly let a room pin its label off-center (e.g. Kitchen's label
+      // clears the Dishwashing corner room carved out of its SE corner)
+      const cx = s.lx ?? s.x + s.w / 2, cy = s.ly ?? s.y + s.h / 2;
       const [px, py] = isoPt(cx, cy, 0);
       const lines = labelLines(roomName(s.officeId, s.id), s);
       const nameTspans = lines
