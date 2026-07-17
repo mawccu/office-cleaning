@@ -22,6 +22,10 @@ const officeIds = Object.keys(offices);
 // ---- live data ----
 let bids = [];                    // full lifecycle rows
 const selectedKeys = new Set();   // "officeId:roomId" being composed into a bid
+const selectedTasks = new Set();  // task ids checked for the bid being composed
+let bidAmount = "";               // composer fields kept across re-renders
+let bidDue = "";
+let bidNote = "";
 let auth = null;                  // { name, pin } — remembered login
 let pendingAfterAuth = null;      // action to retry once signed in
 
@@ -29,6 +33,7 @@ let pendingAfterAuth = null;      // action to retry once signed in
 const floorPlanWrapEl = document.getElementById("floorPlanWrap");
 const composerEl = document.getElementById("composer");
 const dashboardEl = document.getElementById("dashboard");
+const presetsEl = document.getElementById("presets");
 const openBidsEl = document.getElementById("openBids");
 const progressBidsEl = document.getElementById("progressBids");
 const historyListEl = document.getElementById("historyList");
@@ -83,6 +88,10 @@ function selectedAreas() {
   return [...selectedKeys].map((k) => { const i = k.indexOf(":"); return { officeId: k.slice(0, i), roomId: k.slice(i + 1) }; });
 }
 function roomsLabel(rooms) { return (rooms || []).map((x) => roomName(x.office, x.room)).join(", "); }
+function taskById(id) { return TASKS.find((t) => t.id === id); }
+function tasksTagsHtml(tasks) {
+  return (tasks || []).map((id) => { const t = taskById(id); return `<span class="task-tag">${t ? t.icon + " " + esc(t.label) : esc(id)}</span>`; }).join("");
+}
 function openBidsCoveringRoom(officeId, roomId) {
   return bids.filter((b) => b.status === "open" && (b.rooms || []).some((x) => x.office === officeId && x.room === roomId));
 }
@@ -472,7 +481,7 @@ function toggleOffice(officeId) {
 }
 function composerBeingTyped() {
   const a = document.activeElement;
-  return a && composerEl.contains(a) && (a.tagName === "INPUT");
+  return a && composerEl.contains(a) && (a.tagName === "INPUT" || a.tagName === "TEXTAREA");
 }
 function renderComposer() {
   const areas = selectedAreas();
@@ -488,43 +497,94 @@ function renderComposer() {
     return;
   }
   const chips = areas.map((a) => `<button class="area-chip" data-key="${a.officeId}:${a.roomId}" title="Remove"><span class="ac-name">${esc(roomName(a.officeId, a.roomId))}</span><span class="ac-x">×</span></button>`).join("");
+  const taskBtns = TASKS.map((t) => `<button type="button" class="task-chip ${selectedTasks.has(t.id) ? "on" : ""}" data-task="${t.id}"><span>${t.icon}</span>${esc(t.label)}</button>`).join("");
   composerEl.innerHTML = `
     <div class="card-head"><span>Your bid</span><span class="hint">as ${esc(auth.name)}</span></div>
     <div class="card-body">
       <div class="area-chips">${chips}</div>
+      <div class="composer-sub">What to do</div>
+      <div class="task-chips">${taskBtns}</div>
+      <textarea id="noteInput" class="fld note" rows="2" placeholder="Note for the cleaner (optional) — e.g. the floor is really greasy this time">${esc(bidNote)}</textarea>
       <div class="bid-form">
-        <input id="amtInput" class="fld amt-wide" type="number" inputmode="decimal" min="1" step="1" placeholder="Amount (JD)" />
+        <input id="amtInput" class="fld amt-wide" type="number" inputmode="decimal" min="1" step="1" placeholder="Amount (JD)" value="${esc(bidAmount)}" />
         <button id="addBidBtn" class="btn primary">Place bid</button>
       </div>
-      <label class="due-row">Deadline (optional)<input id="dueInput" type="datetime-local" class="fld dt" /></label>
-      <div class="composer-note" id="composerNote">One bid of your amount covering all ${areas.length} selected room${areas.length > 1 ? "s" : ""}.</div>
+      <label class="due-row">Deadline (optional)<input id="dueInput" type="datetime-local" class="fld dt" value="${esc(bidDue)}" /></label>
+      <div class="composer-note" id="composerNote"></div>
     </div>`;
   composerEl.querySelectorAll(".area-chip").forEach((el) => el.addEventListener("click", () => {
     selectedKeys.delete(el.dataset.key); renderFloorPlan(); renderComposer();
   }));
+  composerEl.querySelectorAll(".task-chip").forEach((el) => el.addEventListener("click", () => {
+    const id = el.dataset.task;
+    if (selectedTasks.has(id)) selectedTasks.delete(id); else selectedTasks.add(id);
+    el.classList.toggle("on", selectedTasks.has(id));
+  }));
   const amtInput = document.getElementById("amtInput");
   const dueInput = document.getElementById("dueInput");
+  const noteInput = document.getElementById("noteInput");
   const noteEl = document.getElementById("composerNote");
-  amtInput.addEventListener("input", () => {
+  const previewNote = () => {
     const amt = Number(amtInput.value);
     noteEl.innerHTML = amt > 0
       ? `<b>${esc(auth.name)}</b> bids <b>${fmtMoney(amt)}</b> for ${areas.length > 1 ? `all ${areas.length} rooms` : "this room"}.`
-      : `One bid of your amount covering all ${areas.length} selected room${areas.length > 1 ? "s" : ""}.`;
-  });
+      : `One bid covering all ${areas.length} selected room${areas.length > 1 ? "s" : ""}.`;
+  };
+  previewNote();
+  amtInput.addEventListener("input", () => { bidAmount = amtInput.value; previewNote(); });
+  dueInput.addEventListener("input", () => { bidDue = dueInput.value; });
+  noteInput.addEventListener("input", () => { bidNote = noteInput.value; });
   amtInput.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addBidBtn").click(); });
-  document.getElementById("addBidBtn").addEventListener("click", () => onPlaceBid(areas, amtInput.value, dueInput.value));
+  document.getElementById("addBidBtn").addEventListener("click", () => onPlaceBid(areas, amtInput.value, dueInput.value, noteInput.value));
 }
 
-async function onPlaceBid(areas, amountRaw, dueRaw) {
+/* ---- presets panel (one-tap bulk bids) ---- */
+function renderPresets() {
+  presetsEl.innerHTML = `
+    <div class="card-head"><span>Quick bids</span></div>
+    <div class="preset-list">
+      ${PRESETS.map((p) => `<button class="preset-btn" data-preset="${p.id}"><span class="preset-ico">${p.icon}</span><span class="preset-label">${esc(p.label)}</span></button>`).join("")}
+    </div>
+    <div class="preset-foot">Sets up the rooms and tasks — then just name your amount.</div>`;
+  presetsEl.querySelectorAll("[data-preset]").forEach((el) =>
+    el.addEventListener("click", () => applyPreset(PRESETS.find((p) => p.id === el.dataset.preset))));
+}
+function applyPreset(p) {
+  if (!p) return;
+  const keys = p.rooms
+    ? p.rooms.map((r) => keyOf(r.office, r.room))
+    : p.scope === "all"
+      ? officeIds.flatMap((o) => offices[o].rooms.map((r) => keyOf(o, r.id)))
+      : (offices[p.scope]?.rooms.map((r) => keyOf(p.scope, r.id)) || []);
+  selectedKeys.clear();
+  keys.forEach((k) => selectedKeys.add(k));
+  selectedTasks.clear();
+  (p.tasks || []).forEach((t) => selectedTasks.add(t));
+  renderFloorPlan();
+  renderComposer();
+  if (!auth) toast("Sign in to place this bid");
+  const amt = document.getElementById("amtInput");
+  if (amt) amt.focus();
+  composerEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function onPlaceBid(areas, amountRaw, dueRaw, noteRaw) {
   const amount = Number(amountRaw);
-  if (!requireAuth(() => onPlaceBid(areas, amountRaw, dueRaw))) return;
+  if (!requireAuth(() => onPlaceBid(areas, amountRaw, dueRaw, noteRaw))) return;
   if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
   if (!areas.length) return;
   const rooms = areas.map((a) => ({ office: a.officeId, room: a.roomId }));
+  const note = (noteRaw ?? bidNote).trim();
   const ok = await callRpc("place_bid",
-    { p_amount: amount, p_rooms: rooms, p_due_at: localToISO(dueRaw) },
+    { p_amount: amount, p_rooms: rooms, p_due_at: localToISO(dueRaw), p_tasks: [...selectedTasks], p_note: note || null },
     `Bid placed: ${fmtMoney(amount)} for ${areas.length} room${areas.length > 1 ? "s" : ""}`);
-  if (ok) { selectedKeys.clear(); renderFloorPlan(); renderComposer(); }
+  if (ok) {
+    selectedKeys.clear();
+    selectedTasks.clear();
+    bidAmount = ""; bidDue = ""; bidNote = "";
+    renderFloorPlan();
+    renderComposer();
+  }
 }
 
 /* ============================================================
@@ -536,7 +596,7 @@ function onEditBid(bid) {
   if (val == null) return;
   const amount = Number(val);
   if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
-  callRpc("edit_bid", { p_bid_id: bid.id, p_amount: amount, p_due_at: bid.due_at }, "Bid updated");
+  callRpc("edit_bid", { p_bid_id: bid.id, p_amount: amount, p_due_at: bid.due_at, p_tasks: bid.tasks || [], p_note: bid.note ?? null }, "Bid updated");
 }
 function onSchedule(bid, localVal) {
   callRpc("schedule_bid", { p_bid_id: bid.id, p_scheduled_for: localToISO(localVal) }, "Time set");
@@ -571,6 +631,8 @@ function openCard(b) {
       <div class="bid-amt">${fmtMoney(b.amount)}</div>
     </div>
     <div class="bid-rooms">${esc(roomsLabel(b.rooms))}</div>
+    ${b.tasks && b.tasks.length ? `<div class="task-tags">${tasksTagsHtml(b.tasks)}</div>` : ""}
+    ${b.note ? `<div class="bid-note">“${esc(b.note)}”</div>` : ""}
     ${b.due_at ? `<div class="bid-meta">${duePill(b.due_at)}</div>` : ""}
     <div class="bid-actions">
       ${mine
@@ -595,6 +657,8 @@ function progressCard(b) {
       <span class="status-badge ${cleaned ? "cleaned" : "claimed"}">${cleaned ? "Cleaned · awaiting payment" : "In progress"}</span>
       ${b.due_at ? duePill(b.due_at) : ""}
     </div>
+    ${b.tasks && b.tasks.length ? `<div class="task-tags">${tasksTagsHtml(b.tasks)}</div>` : ""}
+    ${b.note ? `<div class="bid-note">“${esc(b.note)}”</div>` : ""}
     ${schedInput}
     <div class="bid-actions">
       ${iAmClaimer && !cleaned ? `<button class="btn claim small" data-act="cleaned" data-bid="${b.id}">Mark cleaned</button><button class="btn ghost small" data-act="unclaim" data-bid="${b.id}">Un-claim</button>` : ""}
@@ -658,6 +722,7 @@ function updateStats() {
 }
 function render() {
   renderFloorPlan();
+  renderPresets();
   if (!composerBeingTyped()) renderComposer();
   renderBidSections();
   renderDashboard();

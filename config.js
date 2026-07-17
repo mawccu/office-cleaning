@@ -2,6 +2,34 @@
 // Just the areas (offices + rooms) and the traced floor-plan geometry —
 // bids and claims live in Supabase (see supabase.js / app.js).
 
+// Cleaning tasks a bid can ask for (multi-select on each bid).
+const TASKS = [
+  { id: "wipe", label: "Wipe floor", icon: "🧽" },
+  { id: "wash", label: "Wash floor", icon: "🪣" },
+  { id: "desks", label: "Clean desks", icon: "🖥️" },
+  { id: "dishes", label: "Wash dishes", icon: "🍽️" },
+  { id: "organize", label: "Organize stuff", icon: "📦" },
+  { id: "trash", label: "Take trash out", icon: "🗑️" },
+  { id: "dust", label: "Dust surfaces", icon: "🪶" },
+  { id: "windows", label: "Clean windows", icon: "🪟" },
+  { id: "bathroom", label: "Scrub bathroom", icon: "🚽" },
+];
+
+// One-tap bulk bids for the presets panel. `scope` = "all" (every room),
+// an office id (all its rooms), or use `rooms` for an explicit list of
+// {office, room}. `tasks` pre-checks the task list. The user still names
+// the amount before placing.
+const PRESETS = [
+  { id: "trash-all", icon: "🗑️", label: "Take all trash out", scope: "all", tasks: ["trash"] },
+  { id: "desks-all", icon: "🖥️", label: "Clean all desks", rooms: [{ office: "moha", room: "desks" }, { office: "malek", room: "desks" }], tasks: ["desks", "wipe"] },
+  { id: "floors-all", icon: "🪣", label: "Wash every floor", scope: "all", tasks: ["wash"] },
+  { id: "full-all", icon: "✨", label: "Full clean, everywhere", scope: "all", tasks: ["wipe", "wash", "desks", "organize", "trash"] },
+  { id: "kitchen", icon: "🍽️", label: "Kitchen deep clean", rooms: [{ office: "malek", room: "kitchen" }, { office: "malek", room: "dishwashing" }], tasks: ["wash", "dishes", "organize", "trash"] },
+  { id: "baths", icon: "🚽", label: "Scrub the bathrooms", rooms: [{ office: "moha", room: "bathroom" }, { office: "malek", room: "bathroom" }], tasks: ["bathroom", "wipe"] },
+  { id: "moha", icon: "🟤", label: "All of Moha's office", scope: "moha", tasks: ["wipe", "desks", "trash"] },
+  { id: "malek", icon: "🔴", label: "All of Malek's office", scope: "malek", tasks: ["wipe", "desks", "trash"] },
+];
+
 const OFFICES = {
   moha: {
     label: "Moha's Office",
