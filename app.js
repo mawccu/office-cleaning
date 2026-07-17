@@ -1,133 +1,200 @@
 /* ============================================================
    Cleaning Bids board.
 
-   A BID is one posting: one bidder, one amount, and a SET of rooms it
-   covers ("Malek bids 10 JD to clean Kitchen + Storage + Bathroom"). No
-   splitting, no per-room maths — the amount is for the whole bundle.
-   CLAIMING takes a whole bid (all its rooms), logs it to history, and
-   removes it. You can select individual rooms or a whole office at once.
+   Identity: sign in with a name + PIN (remembered on the device, so you
+   don't sign in again). All writes go through PIN-checked Supabase RPCs.
 
-   Data lives in Supabase (supabase.js); the board subscribes to realtime
-   changes so every device updates the moment someone bids or claims.
+   A BID is one posting: bidder + amount + a set of rooms + optional
+   deadline. It moves through a lifecycle:
+       open  ->  claimed  ->  cleaned  ->  paid
+   - anyone claims an open bid (they'll clean those rooms),
+   - the claimer marks it cleaned,
+   - the bidder marks it paid (closes the loop).
+   Bidders can edit/cancel their own open bids; claimers can un-claim.
+
+   Data lives in Supabase; the board subscribes to realtime changes so
+   every device updates the moment anything happens.
    ============================================================ */
 
 const offices = OFFICES;
 const officeIds = Object.keys(offices);
 
-// ---- live data from Supabase ----
-let bids = [];    // { id, bidder_name, amount, rooms:[{office,room}], created_at }
-let claims = [];  // { id, bidder_name, amount, rooms, claimed_by, created_at }
-const selectedKeys = new Set(); // "officeId:roomId" currently selected for a new bid
-
-// ---- who am I (just a name, stored locally) ----
-function userName() { return (localStorage.getItem("bidder_name") || "").trim(); }
-function setUserName(n) { localStorage.setItem("bidder_name", (n || "").trim()); }
+// ---- live data ----
+let bids = [];                    // full lifecycle rows
+const selectedKeys = new Set();   // "officeId:roomId" being composed into a bid
+let auth = null;                  // { name, pin } — remembered login
+let pendingAfterAuth = null;      // action to retry once signed in
 
 // ---- DOM ----
 const floorPlanWrapEl = document.getElementById("floorPlanWrap");
 const composerEl = document.getElementById("composer");
 const dashboardEl = document.getElementById("dashboard");
 const openBidsEl = document.getElementById("openBids");
+const progressBidsEl = document.getElementById("progressBids");
 const historyListEl = document.getElementById("historyList");
 const toastEl = document.getElementById("toast");
-const userNameLabel = document.getElementById("userNameLabel");
-const changeNameBtn = document.getElementById("changeNameBtn");
+const whoamiEl = document.getElementById("whoami");
 const statTotalEl = document.getElementById("statTotal");
 const statAreasEl = document.getElementById("statAreas");
 const selHintEl = document.getElementById("selHint");
+const authOverlay = document.getElementById("authOverlay");
+const authName = document.getElementById("authName");
+const authPin = document.getElementById("authPin");
+const authErr = document.getElementById("authErr");
+const authSubmit = document.getElementById("authSubmit");
+const authCancel = document.getElementById("authCancel");
 
 // ---- helpers ----
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (m) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
-const CURRENCY = "JD"; // Jordanian Dinar
-function money(n) {
-  const v = Number(n) || 0;
-  return Number.isInteger(v) ? String(v) : v.toFixed(2);
-}
+const CURRENCY = "JD";
+function money(n) { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(2); }
 function fmtMoney(n) { return `${money(n)} ${CURRENCY}`; }
 function fmtDate(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return "";
   return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
-function roomName(officeId, roomId) {
-  return offices[officeId]?.rooms.find((r) => r.id === roomId)?.name ?? roomId;
+// "in 3h" / "3h ago" style short relative span
+function relShort(iso) {
+  const abs = Math.abs(new Date(iso) - Date.now());
+  const m = Math.round(abs / 60000), h = Math.round(abs / 3600000), d = Math.round(abs / 86400000);
+  return m < 60 ? `${m}m` : h < 48 ? `${h}h` : `${d}d`;
 }
-function officeLabel(officeId) { return offices[officeId]?.label ?? officeId; }
+function duePill(iso) {
+  if (!iso) return "";
+  const overdue = new Date(iso) - Date.now() < 0;
+  return `<span class="due-pill ${overdue ? "overdue" : ""}">${overdue ? "Overdue " + relShort(iso) : "Due in " + relShort(iso)}</span>`;
+}
+// ISO <-> <input type=datetime-local> value (local time)
+function toLocalInput(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function localToISO(v) { return v ? new Date(v).toISOString() : null; }
+
+function roomName(officeId, roomId) { return offices[officeId]?.rooms.find((r) => r.id === roomId)?.name ?? roomId; }
 function keyOf(officeId, roomId) { return `${officeId}:${roomId}`; }
 function selectedAreas() {
-  return [...selectedKeys].map((k) => {
-    const i = k.indexOf(":");
-    return { officeId: k.slice(0, i), roomId: k.slice(i + 1) };
-  });
+  return [...selectedKeys].map((k) => { const i = k.indexOf(":"); return { officeId: k.slice(0, i), roomId: k.slice(i + 1) }; });
 }
-function bidsCoveringRoom(officeId, roomId) {
-  return bids.filter((b) => (b.rooms || []).some((x) => x.office === officeId && x.room === roomId));
+function roomsLabel(rooms) { return (rooms || []).map((x) => roomName(x.office, x.room)).join(", "); }
+function openBidsCoveringRoom(officeId, roomId) {
+  return bids.filter((b) => b.status === "open" && (b.rooms || []).some((x) => x.office === officeId && x.room === roomId));
 }
 function roomOffered(officeId, roomId) {
-  return bidsCoveringRoom(officeId, roomId).reduce((s, b) => s + Number(b.amount), 0);
-}
-function roomsLabel(rooms) {
-  return (rooms || []).map((x) => roomName(x.office, x.room)).join(", ");
+  return openBidsCoveringRoom(officeId, roomId).reduce((s, b) => s + Number(b.amount), 0);
 }
 function initials(name) {
-  const p = name.trim().split(/\s+/);
+  const p = String(name).trim().split(/\s+/);
   const s = ((p[0]?.[0] || "") + (p[1]?.[0] || "")).toUpperCase();
-  return s || name.slice(0, 2).toUpperCase() || "?";
+  return s || String(name).slice(0, 2).toUpperCase() || "?";
 }
-function hashHue(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return h;
-}
+function hashHue(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; }
+function emptyBlock(msg) { return `<div class="empty-block">${esc(msg)}</div>`; }
 
 let toastTimer = null;
 function toast(msg) {
   toastEl.textContent = msg;
   toastEl.classList.add("show");
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3200);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3400);
 }
 
-// Animated count-up for the header pot total.
 function setNumber(el, to) {
   const from = Number(el.dataset.val || 0);
   to = Number(to) || 0;
   el.dataset.val = to;
   const intTarget = Number.isInteger(to);
-  const start = performance.now();
-  const dur = 550;
+  const start = performance.now(), dur = 550;
   function frame(t) {
     const k = Math.min(1, (t - start) / dur);
     const eased = 1 - Math.pow(1 - k, 3);
     const cur = from + (to - from) * eased;
     el.textContent = `${intTarget ? Math.round(cur) : cur.toFixed(2)} ${CURRENCY}`;
-    if (k < 1) requestAnimationFrame(frame);
-    else el.textContent = fmtMoney(to);
+    if (k < 1) requestAnimationFrame(frame); else el.textContent = fmtMoney(to);
   }
   requestAnimationFrame(frame);
 }
 
 /* ============================================================
-   Isometric "dollhouse" renderer (geometry from config.js is ground
-   truth; this only controls how it's drawn). Selecting a room lifts its
-   slab; rooms with a bid on them glow gold.
+   Auth (name + PIN, remembered in localStorage)
    ============================================================ */
+function loadAuth() { try { auth = JSON.parse(localStorage.getItem("cb_auth") || "null"); } catch { auth = null; } }
+function saveAuth(a) { auth = a; localStorage.setItem("cb_auth", JSON.stringify(a)); updateWhoami(); }
+function clearAuth() { auth = null; localStorage.removeItem("cb_auth"); updateWhoami(); render(); }
 
+function openAuth() {
+  authErr.textContent = "";
+  authName.value = auth?.name || "";
+  authPin.value = "";
+  authOverlay.classList.add("open");
+  setTimeout(() => (auth?.name ? authPin : authName).focus(), 30);
+}
+function closeAuth() { authOverlay.classList.remove("open"); }
+
+async function submitAuth() {
+  const name = authName.value.trim(), pin = authPin.value.trim();
+  if (!name) { authErr.textContent = "Enter your name"; return; }
+  if (pin.length < 4) { authErr.textContent = "PIN must be at least 4 digits"; return; }
+  authSubmit.disabled = true;
+  try {
+    const { error } = await sb.rpc("auth_user", { p_name: name, p_pin: pin });
+    if (error) throw error;
+    saveAuth({ name, pin });
+    closeAuth();
+    await reload();
+    if (pendingAfterAuth) { const a = pendingAfterAuth; pendingAfterAuth = null; a(); }
+  } catch (e) {
+    authErr.textContent = e.message || String(e);
+  } finally {
+    authSubmit.disabled = false;
+  }
+}
+
+// Ensures we're signed in before an action; if not, opens the modal and
+// remembers what to do next.
+function requireAuth(retry) {
+  if (auth) return true;
+  pendingAfterAuth = retry || null;
+  openAuth();
+  return false;
+}
+
+// Every write goes through here: attaches name+pin, handles errors,
+// re-syncs. Returns true on success.
+async function callRpc(fn, params, okMsg) {
+  if (!requireAuth()) return false;
+  try {
+    const { error } = await sb.rpc(fn, { p_name: auth.name, p_pin: auth.pin, ...params });
+    if (error) throw error;
+    if (okMsg) toast(okMsg);
+    await reload();
+    return true;
+  } catch (e) {
+    const msg = e.message || String(e);
+    toast(msg);
+    if (/name or pin|taken with a different pin/i.test(msg)) { clearAuth(); openAuth(); }
+    return false;
+  }
+}
+
+/* ============================================================
+   Isometric renderer (geometry from config.js is ground truth)
+   ============================================================ */
 const ISO_BASE = 16, ISO_LIFT = 22, WALL_H = 54, WALL_T = 12;
-
 const PLATE_RENDER = {
   "moha:bathroom": { parent: "desks", pad: 0, southBottom: "parent", eastSplit: 532 },
   "malek:dishwashing": { parent: "kitchen", pad: 0, southBottom: "parent", eastBottom: "parent" },
   "malek:bathroom": { parent: "desks", pad: 0, southBottom: "parent" },
 };
-
 function isoPt(x, y, z = 0) { return [x - y, (x + y) / 2 - z]; }
 function ptsAttr(points) { return points.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" "); }
 function shapeKey(s) { return `${s.officeId}:${s.id}`; }
-
 FLOOR_PLAN.shapes.forEach((s, i) => { s.__i = i; });
 
 function unionOutline(rects) {
@@ -142,20 +209,15 @@ function unionOutline(rects) {
   const edges = new Map();
   const toggle = (x1, y1, x2, y2) => {
     const rev = `${x2},${y2},${x1},${y1}`;
-    if (edges.has(rev)) edges.delete(rev);
-    else edges.set(`${x1},${y1},${x2},${y2}`, true);
+    if (edges.has(rev)) edges.delete(rev); else edges.set(`${x1},${y1},${x2},${y2}`, true);
   };
   for (const key of filled) {
     const [i, j] = key.split(",").map(Number);
     const x0 = xs[i], x1 = xs[i + 1], y0 = ys[j], y1 = ys[j + 1];
-    toggle(x0, y0, x1, y0); toggle(x1, y0, x1, y1);
-    toggle(x1, y1, x0, y1); toggle(x0, y1, x0, y0);
+    toggle(x0, y0, x1, y0); toggle(x1, y0, x1, y1); toggle(x1, y1, x0, y1); toggle(x0, y1, x0, y0);
   }
   const next = new Map();
-  for (const key of edges.keys()) {
-    const [x1, y1, x2, y2] = key.split(",").map(Number);
-    next.set(`${x1},${y1}`, [x2, y2]);
-  }
+  for (const key of edges.keys()) { const [x1, y1, x2, y2] = key.split(",").map(Number); next.set(`${x1},${y1}`, [x2, y2]); }
   const [firstKey] = next.keys();
   const loop = [];
   let cur = firstKey;
@@ -167,20 +229,12 @@ function unionOutline(rects) {
   } while (cur !== firstKey && loop.length < rects.length * 5);
   return loop;
 }
-
 const ROOM_TOP_OUTLINE = new Map();
 {
   const groups = new Map();
-  for (const s of FLOOR_PLAN.shapes) {
-    const key = shapeKey(s);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(s);
-  }
-  for (const [key, pieces] of groups) {
-    if (pieces.length > 1) ROOM_TOP_OUTLINE.set(key, unionOutline(pieces));
-  }
+  for (const s of FLOOR_PLAN.shapes) { const key = shapeKey(s); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(s); }
+  for (const [key, pieces] of groups) if (pieces.length > 1) ROOM_TOP_OUTLINE.set(key, unionOutline(pieces));
 }
-
 const liftCur = {};
 function isSelected(officeId, roomId) { return selectedKeys.has(keyOf(officeId, roomId)); }
 function liftTarget(officeId, roomId) { return isSelected(officeId, roomId) ? ISO_LIFT : 0; }
@@ -193,7 +247,6 @@ function plateGeom(s) {
   const parentTop = ISO_BASE + Lparent;
   const top = ISO_BASE + (cfg?.pad ?? 0) + Lself + Lparent;
   const x2 = s.x + s.w, y2 = s.y + s.h;
-
   const polys = {};
   const unionPts = ROOM_TOP_OUTLINE.get(key);
   if (unionPts) {
@@ -228,10 +281,8 @@ function plateGeom(s) {
     });
     return { polys, top };
   }
-
   const southBottom = cfg?.southBottom === "parent" ? parentTop : 0;
   polys.south = [isoPt(s.x, y2, top), isoPt(x2, y2, top), isoPt(x2, y2, southBottom), isoPt(s.x, y2, southBottom)];
-
   if (cfg?.eastSplit != null) {
     const m = cfg.eastSplit;
     polys.east = [isoPt(x2, s.y, top), isoPt(x2, m, top), isoPt(x2, m, 0), isoPt(x2, s.y, 0)];
@@ -242,7 +293,6 @@ function plateGeom(s) {
   }
   return { polys, top };
 }
-
 const WALL_CHUNK = 70;
 function wallBoxes() {
   const boxes = [];
@@ -255,26 +305,21 @@ function wallBoxes() {
       const [gs, ge] = w.doorGap;
       if (gs - lo > 1) spans.push([lo - WALL_T / 2, gs]);
       if (hi - ge > 1) spans.push([ge, hi + WALL_T / 2]);
-    } else {
-      spans.push([lo - WALL_T / 2, hi + WALL_T / 2]);
-    }
+    } else spans.push([lo - WALL_T / 2, hi + WALL_T / 2]);
     for (const [a, b] of spans) {
       const len = b - a;
       const n = Math.max(1, Math.ceil(len / WALL_CHUNK));
       const step = len / n;
       for (let k = 0; k < n; k++) {
         const segA = a + step * k, segB = Math.min(b, a + step * (k + 1) + 2);
-        boxes.push(
-          horizontal
-            ? { x: segA, y: w.y1 - WALL_T / 2, w: segB - segA, h: WALL_T }
-            : { x: w.x1 - WALL_T / 2, y: segA, w: WALL_T, h: segB - segA }
-        );
+        boxes.push(horizontal
+          ? { x: segA, y: w.y1 - WALL_T / 2, w: segB - segA, h: WALL_T }
+          : { x: w.x1 - WALL_T / 2, y: segA, w: WALL_T, h: segB - segA });
       }
     }
   }
   return boxes;
 }
-
 function wallPolys(b) {
   const z0 = ISO_BASE, z1 = ISO_BASE + WALL_H;
   const x2 = b.x + b.w, y2 = b.y + b.h;
@@ -284,7 +329,6 @@ function wallPolys(b) {
     east: [isoPt(x2, b.y, z1), isoPt(x2, y2, z1), isoPt(x2, y2, z0), isoPt(x2, b.y, z0)],
   };
 }
-
 function labelLines(name, s) {
   const spanUnits = s.w + s.h;
   if (name.length * 34 > spanUnits * 0.9 && name.includes(" ")) {
@@ -294,40 +338,24 @@ function labelLines(name, s) {
   }
   return [name];
 }
-
 let isoScene = null, tweenRAF = null;
-
 function computeViewBox(walls) {
   let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-  const add = (p) => {
-    if (p[0] < minX) minX = p[0];
-    if (p[0] > maxX) maxX = p[0];
-    if (p[1] < minY) minY = p[1];
-    if (p[1] > maxY) maxY = p[1];
-  };
+  const add = (p) => { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; };
   const zMax = ISO_BASE + 6 + ISO_LIFT * 2;
-  for (const s of FLOOR_PLAN.shapes) {
-    for (const z of [0, zMax]) {
-      add(isoPt(s.x, s.y, z)); add(isoPt(s.x + s.w, s.y, z));
-      add(isoPt(s.x + s.w, s.y + s.h, z)); add(isoPt(s.x, s.y + s.h, z));
-    }
+  for (const s of FLOOR_PLAN.shapes) for (const z of [0, zMax]) {
+    add(isoPt(s.x, s.y, z)); add(isoPt(s.x + s.w, s.y, z)); add(isoPt(s.x + s.w, s.y + s.h, z)); add(isoPt(s.x, s.y + s.h, z));
   }
-  for (const b of walls) {
-    for (const z of [ISO_BASE, ISO_BASE + WALL_H]) {
-      add(isoPt(b.x, b.y, z)); add(isoPt(b.x + b.w, b.y, z));
-      add(isoPt(b.x + b.w, b.y + b.h, z)); add(isoPt(b.x, b.y + b.h, z));
-    }
+  for (const b of walls) for (const z of [ISO_BASE, ISO_BASE + WALL_H]) {
+    add(isoPt(b.x, b.y, z)); add(isoPt(b.x + b.w, b.y, z)); add(isoPt(b.x + b.w, b.y + b.h, z)); add(isoPt(b.x, b.y + b.h, z));
   }
   const mx = 46, mTop = 26, mBottom = 52;
   return { x: minX - mx, y: minY - mTop, w: maxX - minX + mx * 2, h: maxY - minY + mTop + mBottom };
 }
-
 function buildScene() {
   for (const s of FLOOR_PLAN.shapes) liftCur[shapeKey(s)] = liftTarget(s.officeId, s.id);
-
   const farKey = (b) => (b.x + b.w / 2) + (b.y + b.h / 2);
   const walls = wallBoxes().sort((a, b) => farKey(a) - farKey(b));
-
   const rawKey = new Map(FLOOR_PLAN.shapes.map((s) => [s, farKey(s)]));
   for (const s of FLOOR_PLAN.shapes) {
     const parentId = PLATE_RENDER[shapeKey(s)]?.parent;
@@ -337,65 +365,33 @@ function buildScene() {
   }
   const shapes = [...FLOOR_PLAN.shapes].sort((a, b) => rawKey.get(a) - rawKey.get(b));
   const vb = computeViewBox(walls);
-
-  const shadowHtml = FLOOR_PLAN.shapes
-    .map((s) => {
-      const g = 14;
-      const p = [
-        isoPt(s.x - g, s.y - g, 0), isoPt(s.x + s.w + g, s.y - g, 0),
-        isoPt(s.x + s.w + g, s.y + s.h + g, 0), isoPt(s.x - g, s.y + s.h + g, 0),
-      ];
-      return `<polygon points="${ptsAttr(p)}"></polygon>`;
-    })
-    .join("");
-
-  const platesHtml = shapes
-    .map((s) => {
-      const { polys } = plateGeom(s);
-      const faces = Object.entries(polys)
-        .map(([face, p]) => `<polygon class="f-${face.replace(/\d+$/, "")}" data-face="${face}" points="${ptsAttr(p)}"></polygon>`)
-        .join("");
-      const pad = (PLATE_RENDER[shapeKey(s)]?.pad ?? 0) > 0 ? " pad" : "";
-      const deco = s.deco ? " deco" : "";
-      return `<g class="plate office-${s.officeId}${pad}${deco}" data-office="${s.officeId}" data-room="${s.id}" data-idx="${s.__i}">${faces}</g>`;
-    })
-    .join("");
-
-  const wallsHtml = walls
-    .map((b) => {
-      const p = wallPolys(b);
-      return `<g class="wallbox">
-        <polygon class="w-south" points="${ptsAttr(p.south)}"></polygon>
-        <polygon class="w-east" points="${ptsAttr(p.east)}"></polygon>
-        <polygon class="w-top" points="${ptsAttr(p.top)}"></polygon>
-      </g>`;
-    })
-    .join("");
-
-  const labelsHtml = FLOOR_PLAN.shapes
-    .filter((s) => s.label !== false)
-    .map((s) => {
-      const cx = s.lx ?? s.x + s.w / 2, cy = s.ly ?? s.y + s.h / 2;
-      const [px, py] = isoPt(cx, cy, 0);
-      const lines = labelLines(roomName(s.officeId, s.id), s);
-      const nameTspans = lines
-        .map((ln, i) => `<tspan x="${px.toFixed(1)}" dy="${i === 0 ? (lines.length > 1 ? "-0.62em" : "0") : "1.12em"}">${esc(ln)}</tspan>`)
-        .join("");
-      return `<g class="room-label-g" data-office="${s.officeId}" data-room="${s.id}">
-        <text class="room-label" x="${px.toFixed(1)}" y="${py.toFixed(1)}">${nameTspans}</text>
-        <text class="room-price-tag" x="${px.toFixed(1)}" y="${py.toFixed(1)}" dy="${lines.length > 1 ? "1.85em" : "1.45em"}"></text>
-      </g>`;
-    })
-    .join("");
-
+  const shadowHtml = FLOOR_PLAN.shapes.map((s) => {
+    const g = 14;
+    const p = [isoPt(s.x - g, s.y - g, 0), isoPt(s.x + s.w + g, s.y - g, 0), isoPt(s.x + s.w + g, s.y + s.h + g, 0), isoPt(s.x - g, s.y + s.h + g, 0)];
+    return `<polygon points="${ptsAttr(p)}"></polygon>`;
+  }).join("");
+  const platesHtml = shapes.map((s) => {
+    const { polys } = plateGeom(s);
+    const faces = Object.entries(polys).map(([face, p]) => `<polygon class="f-${face.replace(/\d+$/, "")}" data-face="${face}" points="${ptsAttr(p)}"></polygon>`).join("");
+    const pad = (PLATE_RENDER[shapeKey(s)]?.pad ?? 0) > 0 ? " pad" : "";
+    const deco = s.deco ? " deco" : "";
+    return `<g class="plate office-${s.officeId}${pad}${deco}" data-office="${s.officeId}" data-room="${s.id}" data-idx="${s.__i}">${faces}</g>`;
+  }).join("");
+  const wallsHtml = walls.map((b) => {
+    const p = wallPolys(b);
+    return `<g class="wallbox"><polygon class="w-south" points="${ptsAttr(p.south)}"></polygon><polygon class="w-east" points="${ptsAttr(p.east)}"></polygon><polygon class="w-top" points="${ptsAttr(p.top)}"></polygon></g>`;
+  }).join("");
+  const labelsHtml = FLOOR_PLAN.shapes.filter((s) => s.label !== false).map((s) => {
+    const cx = s.lx ?? s.x + s.w / 2, cy = s.ly ?? s.y + s.h / 2;
+    const [px, py] = isoPt(cx, cy, 0);
+    const lines = labelLines(roomName(s.officeId, s.id), s);
+    const nameTspans = lines.map((ln, i) => `<tspan x="${px.toFixed(1)}" dy="${i === 0 ? (lines.length > 1 ? "-0.62em" : "0") : "1.12em"}">${esc(ln)}</tspan>`).join("");
+    return `<g class="room-label-g" data-office="${s.officeId}" data-room="${s.id}"><text class="room-label" x="${px.toFixed(1)}" y="${py.toFixed(1)}">${nameTspans}</text><text class="room-price-tag" x="${px.toFixed(1)}" y="${py.toFixed(1)}" dy="${lines.length > 1 ? "1.85em" : "1.45em"}"></text></g>`;
+  }).join("");
   floorPlanWrapEl.innerHTML = `
     <div class="floorplan-frame" style="aspect-ratio:${vb.w.toFixed(0)}/${vb.h.toFixed(0)}">
       <svg class="floorplan-svg" viewBox="${vb.x.toFixed(0)} ${vb.y.toFixed(0)} ${vb.w.toFixed(0)} ${vb.h.toFixed(0)}" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <filter id="groundBlur" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="15"></feGaussianBlur>
-          </filter>
-        </defs>
+        <defs><filter id="groundBlur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="15"></feGaussianBlur></filter></defs>
         <g class="ground-shadow" filter="url(#groundBlur)">${shadowHtml}</g>
         <g class="plates">${platesHtml}</g>
         <g class="wallsets">${wallsHtml}</g>
@@ -405,7 +401,6 @@ function buildScene() {
     <div class="floorplan-legend">
       ${officeIds.map((id) => `<button class="legend-item" data-office="${id}" title="Select all of ${esc(offices[id].label)}"><span class="swatch office-${id}"></span>${esc(offices[id].label)}</button>`).join("")}
     </div>`;
-
   isoScene = { shapeEls: new Map() };
   const svg = floorPlanWrapEl.querySelector("svg");
   svg.querySelectorAll(".plate").forEach((group) => {
@@ -417,37 +412,27 @@ function buildScene() {
     isoScene.shapeEls.set(i, { shape: s, group, polyEls, labelG, tagEl: labelG ? labelG.querySelector(".room-price-tag") : null });
     if (!s.deco) group.addEventListener("click", () => toggleArea(s.officeId, s.id));
   });
-  floorPlanWrapEl.querySelectorAll(".legend-item").forEach((el) => {
-    el.addEventListener("click", () => toggleOffice(el.dataset.office));
-  });
+  floorPlanWrapEl.querySelectorAll(".legend-item").forEach((el) => el.addEventListener("click", () => toggleOffice(el.dataset.office)));
 }
-
 function applyShapeGeometry(s) {
   const entry = isoScene.shapeEls.get(s.__i);
   const { polys, top } = plateGeom(s);
-  for (const [face, p] of Object.entries(polys)) {
-    if (entry.polyEls[face]) entry.polyEls[face].setAttribute("points", ptsAttr(p));
-  }
+  for (const [face, p] of Object.entries(polys)) if (entry.polyEls[face]) entry.polyEls[face].setAttribute("points", ptsAttr(p));
   if (entry.labelG) entry.labelG.setAttribute("transform", `translate(0,${(-top).toFixed(1)})`);
 }
-
 function startLiftTween() {
   if (tweenRAF) return;
   const step = () => {
     let live = false;
     for (const s of FLOOR_PLAN.shapes) {
-      const key = shapeKey(s);
-      const target = liftTarget(s.officeId, s.id);
-      const cur = liftCur[key];
-      if (Math.abs(target - cur) > 0.35) { liftCur[key] = cur + (target - cur) * 0.2; live = true; }
-      else liftCur[key] = target;
+      const key = shapeKey(s), target = liftTarget(s.officeId, s.id), cur = liftCur[key];
+      if (Math.abs(target - cur) > 0.35) { liftCur[key] = cur + (target - cur) * 0.2; live = true; } else liftCur[key] = target;
     }
     for (const s of FLOOR_PLAN.shapes) applyShapeGeometry(s);
     tweenRAF = live ? requestAnimationFrame(step) : null;
   };
   tweenRAF = requestAnimationFrame(step);
 }
-
 function renderFloorPlan() {
   if (!isoScene) buildScene();
   for (const s of FLOOR_PLAN.shapes) {
@@ -462,290 +447,269 @@ function renderFloorPlan() {
       if (entry.tagEl) entry.tagEl.textContent = offered > 0 ? fmtMoney(offered) : "";
     }
   }
-  // office legend active state (all its rooms selected)
   floorPlanWrapEl.querySelectorAll(".legend-item").forEach((el) => {
-    const oid = el.dataset.office;
-    const rooms = offices[oid].rooms.map((r) => r.id);
-    const all = rooms.length > 0 && rooms.every((rid) => selectedKeys.has(keyOf(oid, rid)));
-    el.classList.toggle("active", all);
+    const oid = el.dataset.office, rooms = offices[oid].rooms.map((r) => r.id);
+    el.classList.toggle("active", rooms.length > 0 && rooms.every((rid) => selectedKeys.has(keyOf(oid, rid))));
   });
   startLiftTween();
 }
 
 /* ============================================================
-   Selection + composer (build one bundled bid)
+   Selection + composer
    ============================================================ */
-
 function toggleArea(officeId, roomId) {
   const k = keyOf(officeId, roomId);
-  if (selectedKeys.has(k)) selectedKeys.delete(k);
-  else selectedKeys.add(k);
+  if (selectedKeys.has(k)) selectedKeys.delete(k); else selectedKeys.add(k);
   renderFloorPlan();
   renderComposer();
 }
-
 function toggleOffice(officeId) {
   const rooms = offices[officeId].rooms.map((r) => r.id);
   const all = rooms.every((rid) => selectedKeys.has(keyOf(officeId, rid)));
-  rooms.forEach((rid) => {
-    const k = keyOf(officeId, rid);
-    if (all) selectedKeys.delete(k);
-    else selectedKeys.add(k);
-  });
+  rooms.forEach((rid) => { const k = keyOf(officeId, rid); if (all) selectedKeys.delete(k); else selectedKeys.add(k); });
   renderFloorPlan();
   renderComposer();
 }
-
 function composerBeingTyped() {
   const a = document.activeElement;
-  return a && composerEl.contains(a) && a.tagName === "INPUT";
+  return a && composerEl.contains(a) && (a.tagName === "INPUT");
 }
-
 function renderComposer() {
   const areas = selectedAreas();
   if (selHintEl) selHintEl.textContent = areas.length ? `${areas.length} selected` : "Tap areas to select";
 
-  if (!areas.length) {
-    composerEl.innerHTML = `
-      <div class="composer-empty">
-        <div class="ce-title">Place a bid</div>
-        <div class="ce-sub">Tap rooms on the plan (or a whole office in the legend), then name one amount to bid on all of them together.</div>
-      </div>`;
+  if (!auth) {
+    composerEl.innerHTML = `<div class="composer-empty"><div class="ce-title">Place a bid</div><div class="ce-sub">Sign in with your name and a PIN to bid. We'll remember you here.</div><button class="btn primary" id="composerSignIn">Sign in</button></div>`;
+    document.getElementById("composerSignIn").addEventListener("click", () => openAuth());
     return;
   }
-
-  const nm = userName();
-  const chips = areas
-    .map((a) => `<button class="area-chip" data-key="${a.officeId}:${a.roomId}" title="Remove">
-        <span class="ac-name">${esc(roomName(a.officeId, a.roomId))}</span>
-        <span class="ac-x">×</span>
-      </button>`)
-    .join("");
-
+  if (!areas.length) {
+    composerEl.innerHTML = `<div class="composer-empty"><div class="ce-title">Place a bid</div><div class="ce-sub">Tap rooms on the plan (or a whole office in the legend), then name one price for all of them.</div></div>`;
+    return;
+  }
+  const chips = areas.map((a) => `<button class="area-chip" data-key="${a.officeId}:${a.roomId}" title="Remove"><span class="ac-name">${esc(roomName(a.officeId, a.roomId))}</span><span class="ac-x">×</span></button>`).join("");
   composerEl.innerHTML = `
-    <div class="card-head"><span>Your bid</span><span class="hint">${areas.length} area${areas.length > 1 ? "s" : ""}</span></div>
+    <div class="card-head"><span>Your bid</span><span class="hint">as ${esc(auth.name)}</span></div>
     <div class="card-body">
       <div class="area-chips">${chips}</div>
       <div class="bid-form">
-        <input id="nameInput" class="fld" type="text" placeholder="Your name" value="${esc(nm)}" autocomplete="name" />
-        <input id="amtInput" class="fld amt" type="number" inputmode="decimal" min="1" step="1" placeholder="Amount" />
+        <input id="amtInput" class="fld amt-wide" type="number" inputmode="decimal" min="1" step="1" placeholder="Amount (JD)" />
         <button id="addBidBtn" class="btn primary">Place bid</button>
       </div>
-      <div class="composer-note" id="composerNote">${areas.length > 1 ? `One bid covering all ${areas.length} selected areas.` : ""}</div>
+      <label class="due-row">Deadline (optional)<input id="dueInput" type="datetime-local" class="fld dt" /></label>
+      <div class="composer-note" id="composerNote">One bid of your amount covering all ${areas.length} selected room${areas.length > 1 ? "s" : ""}.</div>
     </div>`;
-
-  composerEl.querySelectorAll(".area-chip").forEach((el) => {
-    el.addEventListener("click", () => {
-      selectedKeys.delete(el.dataset.key);
-      renderFloorPlan();
-      renderComposer();
-    });
-  });
-
-  const nameInput = document.getElementById("nameInput");
+  composerEl.querySelectorAll(".area-chip").forEach((el) => el.addEventListener("click", () => {
+    selectedKeys.delete(el.dataset.key); renderFloorPlan(); renderComposer();
+  }));
   const amtInput = document.getElementById("amtInput");
+  const dueInput = document.getElementById("dueInput");
   const noteEl = document.getElementById("composerNote");
-  nameInput.addEventListener("change", () => { setUserName(nameInput.value); updateWhoami(); });
   amtInput.addEventListener("input", () => {
     const amt = Number(amtInput.value);
-    const who = nameInput.value.trim() || "You";
-    if (amt > 0) {
-      noteEl.innerHTML = `<b>${esc(who)}</b> bids <b>${fmtMoney(amt)}</b> for ${areas.length > 1 ? `all ${areas.length} areas` : "this area"}.`;
-    } else {
-      noteEl.innerHTML = areas.length > 1 ? `One bid covering all ${areas.length} selected areas.` : "";
-    }
+    noteEl.innerHTML = amt > 0
+      ? `<b>${esc(auth.name)}</b> bids <b>${fmtMoney(amt)}</b> for ${areas.length > 1 ? `all ${areas.length} rooms` : "this room"}.`
+      : `One bid of your amount covering all ${areas.length} selected room${areas.length > 1 ? "s" : ""}.`;
   });
   amtInput.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addBidBtn").click(); });
-  document.getElementById("addBidBtn").addEventListener("click", () => onPlaceBid(areas, nameInput.value.trim(), amtInput.value));
+  document.getElementById("addBidBtn").addEventListener("click", () => onPlaceBid(areas, amtInput.value, dueInput.value));
 }
 
-async function onPlaceBid(areas, name, amountRaw) {
+async function onPlaceBid(areas, amountRaw, dueRaw) {
   const amount = Number(amountRaw);
-  if (!name) return toast("Enter your name first");
+  if (!requireAuth(() => onPlaceBid(areas, amountRaw, dueRaw))) return;
   if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
   if (!areas.length) return;
-  setUserName(name);
-  updateWhoami();
-  try {
-    const rooms = areas.map((a) => ({ office: a.officeId, room: a.roomId }));
-    const { error } = await sb.from("bids").insert({ bidder_name: name, amount, rooms });
-    if (error) throw error;
-    toast(`Bid placed: ${fmtMoney(amount)} for ${areas.length} area${areas.length > 1 ? "s" : ""}`);
-    selectedKeys.clear();
-    await reload();
-  } catch (e) {
-    toast("Could not place bid: " + (e.message || e));
-  }
+  const rooms = areas.map((a) => ({ office: a.officeId, room: a.roomId }));
+  const ok = await callRpc("place_bid",
+    { p_amount: amount, p_rooms: rooms, p_due_at: localToISO(dueRaw) },
+    `Bid placed: ${fmtMoney(amount)} for ${areas.length} room${areas.length > 1 ? "s" : ""}`);
+  if (ok) { selectedKeys.clear(); renderFloorPlan(); renderComposer(); }
 }
 
 /* ============================================================
-   Open bids (claimable postings)
+   Bid actions
    ============================================================ */
-
-function renderOpenBids() {
-  if (!bids.length) {
-    openBidsEl.innerHTML = `<div class="empty-block">No open bids yet. Select some rooms above and place one.</div>`;
-    return;
-  }
-  const sorted = [...bids].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  openBidsEl.innerHTML = sorted
-    .map((b) => `
-      <div class="bid-card">
-        <div class="bid-top">
-          <div class="bid-who">
-            <div class="bid-avatar" style="--h:${hashHue(b.bidder_name)}">${esc(initials(b.bidder_name))}</div>
-            <div class="bid-name">${esc(b.bidder_name)}</div>
-          </div>
-          <div class="bid-amt">${fmtMoney(b.amount)}</div>
-        </div>
-        <div class="bid-rooms">${esc(roomsLabel(b.rooms))}</div>
-        <button class="btn claim small" data-bid="${b.id}">Claim &amp; clean</button>
-      </div>`)
-    .join("");
-
-  openBidsEl.querySelectorAll("[data-bid]").forEach((el) => {
+function onEditBid(bid) {
+  if (!requireAuth()) return;
+  const val = prompt(`New amount for ${roomsLabel(bid.rooms)} (JD):`, money(bid.amount));
+  if (val == null) return;
+  const amount = Number(val);
+  if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
+  callRpc("edit_bid", { p_bid_id: bid.id, p_amount: amount, p_due_at: bid.due_at }, "Bid updated");
+}
+function onSchedule(bid, localVal) {
+  callRpc("schedule_bid", { p_bid_id: bid.id, p_scheduled_for: localToISO(localVal) }, "Time set");
+}
+function wireBidActions() {
+  document.querySelectorAll("[data-act]").forEach((el) => {
     const bid = bids.find((b) => b.id === el.dataset.bid);
-    if (bid) el.addEventListener("click", () => onClaimBid(bid));
+    if (!bid) return;
+    const act = el.dataset.act;
+    if (act === "schedule") { el.addEventListener("change", () => onSchedule(bid, el.value)); return; }
+    el.addEventListener("click", () => {
+      if (act === "claim") callRpc("claim_bid", { p_bid_id: bid.id }, "You claimed it — go clean!");
+      else if (act === "cancel") { if (confirm(`Cancel your bid on ${roomsLabel(bid.rooms)}?`)) callRpc("cancel_bid", { p_bid_id: bid.id }, "Bid canceled"); }
+      else if (act === "edit") onEditBid(bid);
+      else if (act === "unclaim") callRpc("unclaim_bid", { p_bid_id: bid.id }, "Un-claimed");
+      else if (act === "cleaned") callRpc("mark_cleaned", { p_bid_id: bid.id }, "Marked cleaned — waiting on payment");
+      else if (act === "paid") callRpc("mark_paid", { p_bid_id: bid.id }, "Marked paid — done!");
+    });
   });
 }
 
-async function onClaimBid(bid) {
-  let name = userName();
-  if (!name) {
-    const entered = prompt("Your name to claim this bid:", "");
-    if (entered == null) return;
-    name = entered.trim();
-    setUserName(name);
-    updateWhoami();
-  }
-  if (!name) return toast("Enter your name first");
-  if (!confirm(`Claim ${bid.bidder_name}'s bid of ${fmtMoney(bid.amount)} and clean ${roomsLabel(bid.rooms)}?`)) return;
-  try {
-    const { error } = await sb.rpc("claim_bid", { p_bid_id: bid.id, p_claimed_by: name });
-    if (error) throw error;
-    toast(`You claimed ${roomsLabel(bid.rooms)} · ${fmtMoney(bid.amount)}`);
-    await reload();
-  } catch (e) {
-    toast("Could not claim: " + (e.message || e));
-    await reload();
-  }
+/* ============================================================
+   Bid cards
+   ============================================================ */
+function avatarHtml(name) { return `<div class="bid-avatar" style="--h:${hashHue(name)}">${esc(initials(name))}</div>`; }
+
+function openCard(b) {
+  const mine = auth && b.bidder_name === auth.name;
+  return `<div class="bid-card">
+    <div class="bid-top">
+      <div class="bid-who">${avatarHtml(b.bidder_name)}<div class="bid-name">${esc(b.bidder_name)}</div></div>
+      <div class="bid-amt">${fmtMoney(b.amount)}</div>
+    </div>
+    <div class="bid-rooms">${esc(roomsLabel(b.rooms))}</div>
+    ${b.due_at ? `<div class="bid-meta">${duePill(b.due_at)}</div>` : ""}
+    <div class="bid-actions">
+      ${mine
+        ? `<button class="btn ghost small" data-act="edit" data-bid="${b.id}">Edit</button><button class="btn danger small" data-act="cancel" data-bid="${b.id}">Cancel</button>`
+        : `<button class="btn claim small" data-act="claim" data-bid="${b.id}">Claim &amp; clean</button>`}
+    </div>
+  </div>`;
+}
+function progressCard(b) {
+  const cleaned = b.status === "cleaned";
+  const iAmClaimer = auth && b.claimed_by === auth.name;
+  const iAmBidder = auth && b.bidder_name === auth.name;
+  const schedInput = iAmClaimer && !cleaned
+    ? `<label class="sched-row">When you'll do it<input type="datetime-local" class="fld dt" data-act="schedule" data-bid="${b.id}" value="${b.scheduled_for ? toLocalInput(b.scheduled_for) : ""}" /></label>`
+    : (b.scheduled_for ? `<div class="bid-subline">Planned for ${esc(fmtDate(b.scheduled_for))}</div>` : "");
+  return `<div class="bid-card">
+    <div class="bid-top">
+      <div class="bid-who">${avatarHtml(b.claimed_by || b.bidder_name)}<div><div class="bid-name">${esc(roomsLabel(b.rooms))}</div><div class="bid-subline">bid by ${esc(b.bidder_name)} · claimed by ${esc(b.claimed_by)}</div></div></div>
+      <div class="bid-amt">${fmtMoney(b.amount)}</div>
+    </div>
+    <div class="bid-meta">
+      <span class="status-badge ${cleaned ? "cleaned" : "claimed"}">${cleaned ? "Cleaned · awaiting payment" : "In progress"}</span>
+      ${b.due_at ? duePill(b.due_at) : ""}
+    </div>
+    ${schedInput}
+    <div class="bid-actions">
+      ${iAmClaimer && !cleaned ? `<button class="btn claim small" data-act="cleaned" data-bid="${b.id}">Mark cleaned</button><button class="btn ghost small" data-act="unclaim" data-bid="${b.id}">Un-claim</button>` : ""}
+      ${cleaned && iAmBidder ? `<button class="btn primary small" data-act="paid" data-bid="${b.id}">Mark paid</button>` : ""}
+    </div>
+  </div>`;
+}
+function historyCard(b) {
+  return `<div class="history-card">
+    <div class="history-top"><div class="history-area">${esc(roomsLabel(b.rooms))}</div><div class="history-amt">${fmtMoney(b.amount)}</div></div>
+    <div class="history-sub">bid by <b>${esc(b.bidder_name)}</b> · cleaned by <b>${esc(b.claimed_by)}</b> · paid</div>
+    <div class="history-contribs">${esc(fmtDate(b.paid_at || b.created_at))}</div>
+  </div>`;
+}
+
+function renderBidSections() {
+  const open = bids.filter((b) => b.status === "open");
+  const prog = bids.filter((b) => b.status === "claimed" || b.status === "cleaned");
+  const paid = bids.filter((b) => b.status === "paid");
+  const dueVal = (b) => (b.due_at ? new Date(b.due_at).getTime() : Infinity);
+  open.sort((a, b) => dueVal(a) - dueVal(b) || new Date(b.created_at) - new Date(a.created_at));
+  prog.sort((a, b) => new Date(a.scheduled_for || a.created_at) - new Date(b.scheduled_for || b.created_at));
+  paid.sort((a, b) => new Date(b.paid_at || b.created_at) - new Date(a.paid_at || a.created_at));
+
+  openBidsEl.innerHTML = open.length ? open.map(openCard).join("") : emptyBlock("No open bids. Select some rooms above and place one.");
+  progressBidsEl.innerHTML = prog.length ? prog.map(progressCard).join("") : emptyBlock("Nothing being cleaned right now.");
+  historyListEl.innerHTML = paid.length ? paid.map(historyCard).join("") : emptyBlock("No paid jobs yet.");
+  wireBidActions();
 }
 
 /* ============================================================
-   Bidders leaderboard
+   Bidders leaderboard (active open pledges)
    ============================================================ */
-
 function renderDashboard() {
-  const map = new Map(); // name -> { amount, rooms:Set }
+  const map = new Map();
   for (const b of bids) {
+    if (b.status !== "open") continue;
     const cur = map.get(b.bidder_name) || { amount: 0, rooms: new Set() };
     cur.amount += Number(b.amount);
     (b.rooms || []).forEach((x) => cur.rooms.add(keyOf(x.office, x.room)));
     map.set(b.bidder_name, cur);
   }
-  const rows = [...map.entries()]
-    .map(([name, v]) => ({ name, amount: v.amount, rooms: v.rooms.size }))
-    .sort((a, b) => b.amount - a.amount);
+  const rows = [...map.entries()].map(([name, v]) => ({ name, amount: v.amount, rooms: v.rooms.size })).sort((a, b) => b.amount - a.amount);
   const max = rows.length ? rows[0].amount : 0;
-  const totalPledged = rows.reduce((s, r) => s + r.amount, 0);
-
+  const total = rows.reduce((s, r) => s + r.amount, 0);
   const list = rows.length
-    ? rows.map((r, i) => `
-        <div class="lb-row">
-          <div class="lb-rank">${i + 1}</div>
-          <div class="lb-avatar" style="--h:${hashHue(r.name)}">${esc(initials(r.name))}</div>
-          <div class="lb-main">
-            <div class="lb-name">${esc(r.name)}</div>
-            <div class="lb-bar"><span style="width:${max ? Math.max(6, (r.amount / max) * 100) : 0}%"></span></div>
-          </div>
-          <div class="lb-meta">
-            <div class="lb-amt">${fmtMoney(r.amount)}</div>
-            <div class="lb-areas">${r.rooms} room${r.rooms > 1 ? "s" : ""}</div>
-          </div>
-        </div>`).join("")
-    : `<div class="lb-empty">No bids yet. Be the first to back some rooms.</div>`;
-
-  dashboardEl.innerHTML = `
-    <div class="card-head"><span>Bidders</span><span class="hint">${rows.length}</span></div>
-    <div class="lb-total"><span>Total pledged</span><b>${fmtMoney(totalPledged)}</b></div>
-    <div class="lb-list">${list}</div>`;
-}
-
-/* ============================================================
-   Claim history
-   ============================================================ */
-
-function renderHistory() {
-  if (!claims.length) {
-    historyListEl.innerHTML = `<div class="empty-block">No bids claimed yet. Once someone takes a bid, it lands here.</div>`;
-    return;
-  }
-  historyListEl.innerHTML = claims
-    .map((c) => `<div class="history-card">
-        <div class="history-top">
-          <div class="history-area">${esc(roomsLabel(c.rooms))}</div>
-          <div class="history-amt">${fmtMoney(c.amount)}</div>
-        </div>
-        <div class="history-sub">Bid by <b>${esc(c.bidder_name)}</b> · claimed by <b>${esc(c.claimed_by)}</b></div>
-        <div class="history-contribs">${esc(fmtDate(c.created_at))}</div>
-      </div>`)
-    .join("");
+    ? rows.map((r, i) => `<div class="lb-row"><div class="lb-rank">${i + 1}</div>${avatarHtml(r.name).replace("bid-avatar", "lb-avatar")}<div class="lb-main"><div class="lb-name">${esc(r.name)}</div><div class="lb-bar"><span style="width:${max ? Math.max(6, (r.amount / max) * 100) : 0}%"></span></div></div><div class="lb-meta"><div class="lb-amt">${fmtMoney(r.amount)}</div><div class="lb-areas">${r.rooms} room${r.rooms > 1 ? "s" : ""}</div></div></div>`).join("")
+    : `<div class="lb-empty">No open bids yet. Be the first to back some rooms.</div>`;
+  dashboardEl.innerHTML = `<div class="card-head"><span>Bidders</span><span class="hint">${rows.length}</span></div><div class="lb-total"><span>Open pledges</span><b>${fmtMoney(total)}</b></div><div class="lb-list">${list}</div>`;
 }
 
 /* ============================================================
    Stats + data loading + realtime
    ============================================================ */
-
 function updateStats() {
-  const total = bids.reduce((s, b) => s + Number(b.amount), 0);
-  const areaCount = new Set(bids.flatMap((b) => (b.rooms || []).map((x) => keyOf(x.office, x.room)))).size;
+  const open = bids.filter((b) => b.status === "open");
+  const total = open.reduce((s, b) => s + Number(b.amount), 0);
+  const roomCount = new Set(open.flatMap((b) => (b.rooms || []).map((x) => keyOf(x.office, x.room)))).size;
   if (statTotalEl) setNumber(statTotalEl, total);
-  if (statAreasEl) statAreasEl.textContent = areaCount;
+  if (statAreasEl) statAreasEl.textContent = roomCount;
 }
-
 function render() {
   renderFloorPlan();
   if (!composerBeingTyped()) renderComposer();
-  renderOpenBids();
+  renderBidSections();
   renderDashboard();
-  renderHistory();
   updateStats();
 }
-
 async function reload() {
   try {
-    const [bidsRes, claimsRes] = await Promise.all([
-      sb.from("bids").select("*").order("created_at", { ascending: true }),
-      sb.from("claims").select("*").order("created_at", { ascending: false }).limit(60),
-    ]);
-    if (bidsRes.error) throw bidsRes.error;
-    if (claimsRes.error) throw claimsRes.error;
-    bids = bidsRes.data || [];
-    claims = claimsRes.data || [];
+    const { data, error } = await sb.from("bids").select("*").order("created_at", { ascending: false }).limit(300);
+    if (error) throw error;
+    bids = data || [];
   } catch (e) {
     toast("Connection issue: " + (e.message || e));
   }
   render();
 }
-
 function subscribeRealtime() {
-  sb.channel("board")
-    .on("postgres_changes", { event: "*", schema: "public", table: "bids" }, reload)
-    .on("postgres_changes", { event: "*", schema: "public", table: "claims" }, reload)
-    .subscribe();
+  sb.channel("board").on("postgres_changes", { event: "*", schema: "public", table: "bids" }, reload).subscribe();
 }
-
 function updateWhoami() {
-  userNameLabel.textContent = userName() || "—";
+  if (auth) {
+    whoamiEl.innerHTML = `<span class="whoami-name">You <b>${esc(auth.name)}</b></span><button id="signOutBtn" class="linkbtn">sign out</button>`;
+    document.getElementById("signOutBtn").addEventListener("click", clearAuth);
+  } else {
+    whoamiEl.innerHTML = `<button id="signInBtn" class="linkbtn strong">Sign in</button>`;
+    document.getElementById("signInBtn").addEventListener("click", openAuth);
+  }
 }
 
-changeNameBtn.addEventListener("click", () => {
-  const n = prompt("Your name (shown on your bids and claims):", userName());
-  if (n != null) { setUserName(n); updateWhoami(); renderComposer(); }
-});
+// ---- wire auth modal ----
+authSubmit.addEventListener("click", submitAuth);
+authCancel.addEventListener("click", () => { pendingAfterAuth = null; closeAuth(); });
+authPin.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
+authName.addEventListener("keydown", (e) => { if (e.key === "Enter") authPin.focus(); });
+authOverlay.addEventListener("click", (e) => { if (e.target === authOverlay) { pendingAfterAuth = null; closeAuth(); } });
+
+// Keep due/overdue countdowns fresh without wiping a focused input.
+setInterval(() => {
+  const a = document.activeElement;
+  const inSection = a && (openBidsEl.contains(a) || progressBidsEl.contains(a)) && a.tagName === "INPUT";
+  if (!inSection) renderBidSections();
+}, 45000);
 
 // ---- boot ----
+loadAuth();
 updateWhoami();
 render();
-reload();
-subscribeRealtime();
+(async () => {
+  if (auth) {
+    // validate the remembered login (PIN may have been changed elsewhere)
+    const { error } = await sb.rpc("auth_user", { p_name: auth.name, p_pin: auth.pin });
+    if (error) { clearAuth(); }
+  }
+  await reload();
+  subscribeRealtime();
+})();
