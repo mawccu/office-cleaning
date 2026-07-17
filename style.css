@@ -469,6 +469,13 @@ table.price-table tr:last-child td { border-bottom: none; }
 .plate.office-malek .f-south { fill: #a06d66; stroke: #a06d66; }
 .plate.office-malek .f-east  { fill: #7c534d; stroke: #7c534d; }
 
+/* Shared entrance hall: cool slate blue (the blue strip in the
+   reference plan). Pure architecture — not clickable, never lifts. */
+.plate.deco { pointer-events: none; cursor: default; }
+.plate.office-hall .f-top   { fill: #7fa3c4; stroke: #7fa3c4; }
+.plate.office-hall .f-south { fill: #648199; stroke: #648199; }
+.plate.office-hall .f-east  { fill: #4e6478; stroke: #4e6478; }
+
 .plate polygon { stroke-width: 1; stroke-linejoin: round; }
 
 @media (hover: hover) {
@@ -494,6 +501,7 @@ table.price-table tr:last-child td { border-bottom: none; }
 
 .legend-item .swatch.office-moha { background: #c9b38d; }
 .legend-item .swatch.office-malek { background: #c98f87; }
+.legend-item .swatch.office-hall { background: #7fa3c4; }
 
 .room-label-g { pointer-events: none; }
 

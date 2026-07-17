@@ -72,13 +72,17 @@ const WALL_T  = 12;    // wall thickness
 // pad > 0 draws the zone as a slightly raised platform (the wall-less
 // zones in Malek's office, marked only by door frames in the reference).
 const PLATE_RENDER = {
-  // Moha's bathroom is carved into the Desks area but its east edge is
-  // also part of the building exterior north of y=532 — split that face.
+  // Moha's bathroom is carved into the NE corner of the Desks area, but
+  // north of y=532 there is no Desks slab behind its east face (that
+  // stretch borders the hall directly) — split the face: the north part
+  // drops to ground, the south part stops at the Desks slab top.
   "moha:bathroom": { parent: "desks", pad: 0, southBottom: "parent", eastSplit: 532 },
   // Dishwashing Area and Malek's Bathroom are real enclosed rooms carved
   // out of the (much bigger) Desks footprint — both of their south edges
-  // border Desks, and Dishwashing's east edge does too (Malek's Bathroom's
-  // east edge is the building's real exterior, so it's left as ground).
+  // border Desks, and Dishwashing's east edge does too. Dishwashing's
+  // west edge borders the hall, but west faces are never drawn in this
+  // projection. Malek's Bathroom's east edge is the building's real
+  // exterior, so it's left as ground.
   "malek:dishwashing": { parent: "desks", pad: 0, southBottom: "parent", eastBottom: "parent" },
   "malek:bathroom": { parent: "desks", pad: 0, southBottom: "parent" },
 };
@@ -169,7 +173,8 @@ const ROOM_TOP_OUTLINE = new Map();
 // Current + target lift per shape (world units), tweened.
 const liftCur = {};
 function liftTarget(officeId, roomId) {
-  return selections[officeId][roomId] ? ISO_LIFT : 0;
+  // deco shapes (the shared hall) belong to no office and never lift
+  return selections[officeId]?.[roomId] ? ISO_LIFT : 0;
 }
 
 function plateGeom(s) {
@@ -364,7 +369,8 @@ function buildScene() {
         .map(([face, p]) => `<polygon class="f-${face === "east2" ? "east" : face}" data-face="${face}" points="${ptsAttr(p)}"></polygon>`)
         .join("");
       const pad = (PLATE_RENDER[shapeKey(s)]?.pad ?? 0) > 0 ? " pad" : "";
-      return `<g class="plate office-${s.officeId}${pad}" data-office="${s.officeId}" data-room="${s.id}" data-idx="${s.__i}">${faces}</g>`;
+      const deco = s.deco ? " deco" : "";
+      return `<g class="plate office-${s.officeId}${pad}${deco}" data-office="${s.officeId}" data-room="${s.id}" data-idx="${s.__i}">${faces}</g>`;
     })
     .join("");
 
@@ -411,6 +417,7 @@ function buildScene() {
     </div>
     <div class="floorplan-legend">
       ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${offices[id].label}</div>`).join("")}
+      <div class="legend-item"><span class="swatch office-hall"></span>Shared Hall</div>
     </div>`;
 
   // Keyed per SHAPE INSTANCE (s.__i), not per room — a multi-piece room
@@ -432,7 +439,7 @@ function buildScene() {
       labelG,
       tagEl: labelG ? labelG.querySelector(".room-price-tag") : null,
     });
-    group.addEventListener("click", () => toggleRoom(s.officeId, s.id));
+    if (!s.deco) group.addEventListener("click", () => toggleRoom(s.officeId, s.id));
   });
 }
 
@@ -471,7 +478,7 @@ function renderFloorPlan() {
   // Sync selection classes + label text, then tween slab heights.
   for (const s of FLOOR_PLAN.shapes) {
     const entry = isoScene.shapeEls.get(s.__i);
-    const tier = selections[s.officeId][s.id];
+    const tier = selections[s.officeId]?.[s.id];
     entry.group.classList.toggle("selected", !!tier);
     if (entry.labelG) {
       entry.labelG.classList.toggle("selected", !!tier);
