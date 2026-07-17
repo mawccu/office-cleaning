@@ -61,9 +61,9 @@ function setTier(officeId, roomId, tierId) {
    a room smoothly lifts its slab out of the model.
    ============================================================ */
 
-const ISO_BASE = 26;   // slab thickness (z of every room's floor top)
+const ISO_BASE = 16;   // slab thickness (z of every room's floor top)
 const ISO_LIFT = 22;   // how far a selected room's slab rises
-const WALL_H  = 60;    // wall height above the slab
+const WALL_H  = 54;    // wall height above the slab
 const WALL_T  = 12;    // wall thickness
 
 // Rendering-only relationships: some rooms sit ON another room's slab
@@ -279,7 +279,12 @@ function wallBoxes() {
       const n = Math.max(1, Math.ceil(len / WALL_CHUNK));
       const step = len / n;
       for (let k = 0; k < n; k++) {
-        const segA = a + step * k, segB = a + step * (k + 1);
+        // Overlap each chunk 2 units into the next one: perfectly flush
+        // chunks still show a hairline seam at every boundary (each
+        // polygon antialiases independently), which made long walls read
+        // as a row of separate bricks. Overlapping same-color coplanar
+        // faces can't seam.
+        const segA = a + step * k, segB = Math.min(b, a + step * (k + 1) + 2);
         boxes.push(
           horizontal
             ? { x: segA, y: w.y1 - WALL_T / 2, w: segB - segA, h: WALL_T }

@@ -57,7 +57,7 @@ const FLOOR_PLAN = {
 
     // Kitchen is the WIDER of the two top rooms (divider at x=1337);
     // its label is nudged NW so it clears the Dishwashing corner room.
-    { officeId: "malek", id: "kitchen", x: 976, y: 118, w: 355, h: 342, lx: 1120, ly: 265 },
+    { officeId: "malek", id: "kitchen", x: 966, y: 118, w: 365, h: 342, lx: 1120, ly: 265 },
     { officeId: "malek", id: "storage", x: 1343, y: 118, w: 278, h: 342 },
     // Desks = everything right of the hall, drawn first so the Bathroom
     // sits on top of it as its own small enclosed room.
@@ -79,8 +79,8 @@ const FLOOR_PLAN = {
     { x1: 954, y1: 50, x2: 954, y2: 475 },
     { x1: 954, y1: 475, x2: 1094, y2: 475 },
     { x1: 1094, y1: 475, x2: 1094, y2: 1027 },
-    // South wall, with the office's own front door
-    { x1: 1094, y1: 1027, x2: 656, y2: 1027, doorGap: [958, 1000] },
+    // South wall — solid (no exterior door drawn on the model)
+    { x1: 1094, y1: 1027, x2: 656, y2: 1027 },
     { x1: 656, y1: 1027, x2: 656, y2: 289 },
     { x1: 656, y1: 289, x2: 430, y2: 289 },
     { x1: 430, y1: 289, x2: 430, y2: 50 },
@@ -91,17 +91,20 @@ const FLOOR_PLAN = {
     { x1: 954, y1: 761, x2: 1094, y2: 761 },
 
     // --- Malek's Office ---
-    { x1: 976, y1: 118, x2: 1621, y2: 118 },
+    { x1: 966, y1: 118, x2: 1621, y2: 118 },
     { x1: 1621, y1: 118, x2: 1621, y2: 1027 },
-    // South wall; the gap under the hall is the shared street entrance
-    { x1: 1621, y1: 1027, x2: 1094, y2: 1027, doorGap: [1130, 1215] },
-    // West wall stops at the kitchen — below y=460 it's Moha's side + hall
-    { x1: 976, y1: 118, x2: 976, y2: 460 },
+    // South wall — solid (no exterior door drawn on the model)
+    { x1: 1621, y1: 1027, x2: 1094, y2: 1027 },
+    // West wall stops at the kitchen — below y=460 it's Moha's side + hall.
+    // At x=966 it sits flush against Moha's east wall (x=954, both 12
+    // thick) so the pair reads as ONE thick shared wall, not two walls
+    // with a dark slot between them.
+    { x1: 966, y1: 118, x2: 966, y2: 460 },
     // Kitchen / Storage divider (solid; kitchen is the wider room)
     { x1: 1337, y1: 118, x2: 1337, y2: 460 },
     // Kitchen south wall — the hall doorway sits just west of the
     // Dishwashing corner room so its west wall lands on the door jamb
-    { x1: 976, y1: 460, x2: 1337, y2: 460, doorGap: [1120, 1197] },
+    { x1: 966, y1: 460, x2: 1337, y2: 460, doorGap: [1120, 1197] },
     // Storage south wall (door into the Desks strip below it)
     { x1: 1337, y1: 460, x2: 1621, y2: 460, doorGap: [1425, 1490] },
     // Hall east wall, with a doorway into Desks near its south end

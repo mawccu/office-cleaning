@@ -461,20 +461,20 @@ table.price-table tr:last-child td { border-bottom: none; }
 
 /* Moha's office: warm sand */
 .plate.office-moha .f-top   { fill: #c9b38d; stroke: #c9b38d; }
-.plate.office-moha .f-south { fill: #a08b69; stroke: #a08b69; }
-.plate.office-moha .f-east  { fill: #7c6b50; stroke: #7c6b50; }
+.plate.office-moha .f-south { fill: #a8916e; stroke: #a8916e; }
+.plate.office-moha .f-east  { fill: #85745a; stroke: #85745a; }
 
 /* Malek's office: muted clay */
 .plate.office-malek .f-top   { fill: #c98f87; stroke: #c98f87; }
-.plate.office-malek .f-south { fill: #a06d66; stroke: #a06d66; }
-.plate.office-malek .f-east  { fill: #7c534d; stroke: #7c534d; }
+.plate.office-malek .f-south { fill: #aa766e; stroke: #aa766e; }
+.plate.office-malek .f-east  { fill: #875e57; stroke: #875e57; }
 
 /* Shared entrance hall: cool slate blue (the blue strip in the
    reference plan). Pure architecture — not clickable, never lifts. */
 .plate.deco { pointer-events: none; cursor: default; }
 .plate.office-hall .f-top   { fill: #7fa3c4; stroke: #7fa3c4; }
-.plate.office-hall .f-south { fill: #648199; stroke: #648199; }
-.plate.office-hall .f-east  { fill: #4e6478; stroke: #4e6478; }
+.plate.office-hall .f-south { fill: #6b89a1; stroke: #6b89a1; }
+.plate.office-hall .f-east  { fill: #587085; stroke: #587085; }
 
 .plate polygon { stroke-width: 1; stroke-linejoin: round; }
 
@@ -495,9 +495,9 @@ table.price-table tr:last-child td { border-bottom: none; }
 
 /* Walls: light, crisp, architectural */
 .wallbox polygon { stroke-width: 1; stroke-linejoin: round; pointer-events: none; }
-.wallbox .w-top   { fill: #edf0f6; stroke: #edf0f6; }
-.wallbox .w-south { fill: #b9c0ce; stroke: #b9c0ce; }
-.wallbox .w-east  { fill: #878fa1; stroke: #878fa1; }
+.wallbox .w-top   { fill: #f2f4f8; stroke: #f2f4f8; }
+.wallbox .w-south { fill: #c8cedb; stroke: #c8cedb; }
+.wallbox .w-east  { fill: #9aa3b5; stroke: #9aa3b5; }
 
 .legend-item .swatch.office-moha { background: #c9b38d; }
 .legend-item .swatch.office-malek { background: #c98f87; }
