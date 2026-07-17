@@ -40,9 +40,13 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (m) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
+const CURRENCY = "JD"; // Jordanian Dinar
 function money(n) {
   const v = Number(n) || 0;
   return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+function fmtMoney(n) {
+  return `${money(n)} ${CURRENCY}`;
 }
 function fmtDate(iso) {
   const d = new Date(iso);
@@ -88,7 +92,7 @@ function toast(msg) {
 }
 
 // Animated count-up for a number element (used for the header pot total).
-function setNumber(el, to, prefix = "") {
+function setNumber(el, to) {
   const from = Number(el.dataset.val || 0);
   to = Number(to) || 0;
   el.dataset.val = to;
@@ -99,9 +103,9 @@ function setNumber(el, to, prefix = "") {
     const k = Math.min(1, (t - start) / dur);
     const eased = 1 - Math.pow(1 - k, 3);
     const cur = from + (to - from) * eased;
-    el.textContent = prefix + (intTarget ? Math.round(cur) : cur.toFixed(2));
+    el.textContent = `${intTarget ? Math.round(cur) : cur.toFixed(2)} ${CURRENCY}`;
     if (k < 1) requestAnimationFrame(frame);
-    else el.textContent = prefix + money(to);
+    else el.textContent = fmtMoney(to);
   }
   requestAnimationFrame(frame);
 }
@@ -452,7 +456,7 @@ function renderFloorPlan() {
     if (entry.labelG) {
       entry.labelG.classList.toggle("selected", sel);
       entry.labelG.classList.toggle("has-pot", pot > 0 && !sel);
-      if (entry.tagEl) entry.tagEl.textContent = pot > 0 ? `$${money(pot)}` : "";
+      if (entry.tagEl) entry.tagEl.textContent = pot > 0 ? fmtMoney(pot) : "";
     }
   }
   startLiftTween();
@@ -493,7 +497,7 @@ function renderComposer() {
       const pot = potFor(a.officeId, a.roomId);
       return `<button class="area-chip" data-key="${a.officeId}:${a.roomId}" title="Remove">
         <span class="ac-name">${esc(roomName(a.officeId, a.roomId))}</span>
-        ${pot > 0 ? `<span class="ac-pot">$${money(pot)}</span>` : ""}
+        ${pot > 0 ? `<span class="ac-pot">${fmtMoney(pot)}</span>` : ""}
         <span class="ac-x">×</span>
       </button>`;
     })
@@ -505,13 +509,13 @@ function renderComposer() {
       <div class="area-chips">${chips}</div>
       <div class="bid-form">
         <input id="nameInput" class="fld" type="text" placeholder="Your name" value="${esc(nm)}" autocomplete="name" />
-        <input id="amtInput" class="fld amt" type="number" inputmode="decimal" min="1" step="1" placeholder="$" />
+        <input id="amtInput" class="fld amt" type="number" inputmode="decimal" min="1" step="1" placeholder="JD" />
         <button id="addBidBtn" class="btn primary">Add to ${areas.length > 1 ? `each · ${areas.length}` : "pot"}</button>
       </div>
       <div class="composer-note" id="composerNote">${areas.length > 1 ? `Your amount is added to <b>each</b> of the ${areas.length} selected areas.` : ""}</div>
       <button id="claimBtn" class="btn claim" ${claimable.length ? "" : "disabled"}>
         ${claimable.length
-          ? `Claim ${claimable.length > 1 ? claimable.length + " areas" : "this area"} · collect $${money(totalPot)}`
+          ? `Claim ${claimable.length > 1 ? claimable.length + " areas" : "this area"} · collect ${fmtMoney(totalPot)}`
           : "No pot to claim yet"}
       </button>
     </div>`;
@@ -532,9 +536,9 @@ function renderComposer() {
   amtInput.addEventListener("input", () => {
     const amt = Number(amtInput.value);
     if (amt > 0 && areas.length > 1) {
-      noteEl.innerHTML = `$${money(amt)} to each · <b>$${money(amt)} × ${areas.length} = $${money(amt * areas.length)}</b> total`;
+      noteEl.innerHTML = `${fmtMoney(amt)} to each · <b>${fmtMoney(amt)} × ${areas.length} = ${fmtMoney(amt * areas.length)}</b> total`;
     } else if (amt > 0) {
-      noteEl.innerHTML = `Adds <b>$${money(amt)}</b> to the pot.`;
+      noteEl.innerHTML = `Adds <b>${fmtMoney(amt)}</b> to the pot.`;
     } else {
       noteEl.innerHTML = areas.length > 1 ? `Your amount is added to <b>each</b> of the ${areas.length} selected areas.` : "";
     }
@@ -556,8 +560,8 @@ async function onAddBid(areas, name, amountRaw) {
     const { error } = await sb.from("bids").insert(rows);
     if (error) throw error;
     toast(areas.length > 1
-      ? `Added $${money(amount)} to each of ${areas.length} areas`
-      : `Added $${money(amount)} to ${roomName(areas[0].officeId, areas[0].roomId)}`);
+      ? `Added ${fmtMoney(amount)} to each of ${areas.length} areas`
+      : `Added ${fmtMoney(amount)} to ${roomName(areas[0].officeId, areas[0].roomId)}`);
     await reload();
   } catch (e) {
     toast("Could not add bid: " + (e.message || e));
@@ -571,7 +575,7 @@ async function onClaim(areas, name) {
   const total = claimable.reduce((s, a) => s + potFor(a.officeId, a.roomId), 0);
   const names = claimable.map((a) => roomName(a.officeId, a.roomId)).join(", ");
   const label = claimable.length > 1 ? `${claimable.length} areas (${names})` : names;
-  if (!confirm(`Claim ${label} and collect $${money(total)}? You'll go and clean ${claimable.length > 1 ? "them" : "it"}.`)) return;
+  if (!confirm(`Claim ${label} and collect ${fmtMoney(total)}? You'll go and clean ${claimable.length > 1 ? "them" : "it"}.`)) return;
   setUserName(name);
   updateWhoami();
   try {
@@ -580,7 +584,7 @@ async function onClaim(areas, name) {
       if (error) throw error;
       selectedKeys.delete(keyOf(a.officeId, a.roomId));
     }
-    toast(`You claimed ${claimable.length > 1 ? claimable.length + " areas" : names} · $${money(total)}`);
+    toast(`You claimed ${claimable.length > 1 ? claimable.length + " areas" : names} · ${fmtMoney(total)}`);
     await reload();
   } catch (e) {
     toast("Could not claim: " + (e.message || e));
@@ -616,7 +620,7 @@ function renderDashboard() {
             <div class="lb-bar"><span style="width:${max ? Math.max(6, (r.amount / max) * 100) : 0}%"></span></div>
           </div>
           <div class="lb-meta">
-            <div class="lb-amt">$${money(r.amount)}</div>
+            <div class="lb-amt">${fmtMoney(r.amount)}</div>
             <div class="lb-areas">${r.areas} area${r.areas > 1 ? "s" : ""}</div>
           </div>
         </div>`).join("")
@@ -624,7 +628,7 @@ function renderDashboard() {
 
   dashboardEl.innerHTML = `
     <div class="card-head"><span>Bidders</span><span class="hint">${rows.length}</span></div>
-    <div class="lb-total"><span>Total pledged</span><b>$${money(totalPledged)}</b></div>
+    <div class="lb-total"><span>Total pledged</span><b>${fmtMoney(totalPledged)}</b></div>
     <div class="lb-list">${list}</div>`;
 }
 
@@ -639,11 +643,11 @@ function renderHistory() {
   }
   historyListEl.innerHTML = claims
     .map((c) => {
-      const contribs = (c.contributors || []).map((x) => `${esc(x.name)} $${money(x.amount)}`).join(", ");
+      const contribs = (c.contributors || []).map((x) => `${esc(x.name)} ${fmtMoney(x.amount)}`).join(", ");
       return `<div class="history-card">
         <div class="history-top">
           <div class="history-area">${esc(roomName(c.office_id, c.room_id))}<span class="room-office-tag">${esc(officeLabel(c.office_id))}</span></div>
-          <div class="history-amt">$${money(c.total_amount)}</div>
+          <div class="history-amt">${fmtMoney(c.total_amount)}</div>
         </div>
         <div class="history-sub">Claimed by <b>${esc(c.claimed_by)}</b> · ${esc(fmtDate(c.created_at))}</div>
         ${contribs ? `<div class="history-contribs">from ${contribs}</div>` : ""}
@@ -659,7 +663,7 @@ function renderHistory() {
 function updateStats() {
   const total = bids.reduce((s, b) => s + Number(b.amount), 0);
   const areaCount = new Set(bids.map((b) => keyOf(b.office_id, b.room_id))).size;
-  if (statTotalEl) setNumber(statTotalEl, total, "$");
+  if (statTotalEl) setNumber(statTotalEl, total);
   if (statAreasEl) statAreasEl.textContent = areaCount;
 }
 
