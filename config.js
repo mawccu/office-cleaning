@@ -1,13 +1,8 @@
-// Shared data model + localStorage helpers for the office cleaning app.
-// Client page (index.html) and Admin page (admin.html) both read/write this.
+// Shared data model for the office cleaning-bids board.
+// Just the areas (offices + rooms) and the traced floor-plan geometry —
+// bids and claims live in Supabase (see supabase.js / app.js).
 
-const TIERS = [
-  { id: "quick", label: "Quick", desc: "Surface tidy, trash, wipe down" },
-  { id: "standard", label: "Standard", desc: "Quick + floors, dusting" },
-  { id: "deep", label: "Deep", desc: "Standard + full scrub, sanitize" },
-];
-
-const DEFAULT_OFFICES = {
+const OFFICES = {
   moha: {
     label: "Moha's Office",
     // Two rooms + a bathroom. The L-shaped area at the top (the wide part
@@ -34,14 +29,12 @@ const DEFAULT_OFFICES = {
     ],
   },
   // The entrance hall between the two offices (blue strip in the
-  // reference) — its own group since it belongs to neither office, but
-  // it gets cleaned like any room.
+  // reference) — its own group since it belongs to neither office.
   hall: {
     label: "Hall",
     rooms: [{ id: "hall", name: "Hall" }],
   },
-  // Outdoor square off the south side of Malek's Desks, reached through
-  // a door in the south wall. Also gets cleaned.
+  // Outdoor terrace running the full south side of the building.
   outside: {
     label: "Outside",
     rooms: [{ id: "outside", name: "Outside" }],
@@ -53,9 +46,8 @@ const DEFAULT_OFFICES = {
 // offices sit in the SAME coordinate space. Each shape carries its
 // officeId + room id. A room can be made of more than one rect (e.g. the
 // L-shaped Chill Area) — set label:false on the secondary piece so the
-// name/price only prints once. deco:true marks pure architecture that is
-// NOT a cleanable room (the shared entrance hall — the blue strip in the
-// reference): it's drawn, but has no label, takes no clicks, never lifts.
+// name/pot only prints once. deco:true marks pure architecture that is
+// NOT a cleanable area: it's drawn, but has no label, takes no clicks.
 const FLOOR_PLAN = {
   shapes: [
     { officeId: "moha", id: "chill", x: 430, y: 50, w: 524, h: 239 },
@@ -134,67 +126,4 @@ const FLOOR_PLAN = {
     { x1: 1495, y1: 460, x2: 1495, y2: 672, doorGap: [560, 640] },
     { x1: 1495, y1: 672, x2: 1621, y2: 672 },
   ],
-};
-
-// Default price per room per tier ($)
-const DEFAULT_PRICES = {
-  moha: {
-    chill: { quick: 4, standard: 7, deep: 12 },
-    bathroom: { quick: 4, standard: 7, deep: 12 },
-    desks: { quick: 4, standard: 8, deep: 13 },
-  },
-  malek: {
-    kitchen: { quick: 4, standard: 8, deep: 13 },
-    storage: { quick: 3, standard: 5, deep: 9 },
-    dishwashing: { quick: 3, standard: 6, deep: 10 },
-    bathroom: { quick: 4, standard: 7, deep: 12 },
-    desks: { quick: 5, standard: 9, deep: 15 },
-  },
-  hall: {
-    hall: { quick: 3, standard: 5, deep: 9 },
-  },
-  outside: {
-    outside: { quick: 4, standard: 7, deep: 12 },
-  },
-};
-
-const STORAGE_KEYS = {
-  offices: "cleaning_offices",
-  prices: "cleaning_prices",
-  orders: "cleaning_orders",
-};
-
-const Store = {
-  getOffices() {
-    const raw = localStorage.getItem(STORAGE_KEYS.offices);
-    return raw ? JSON.parse(raw) : structuredClone(DEFAULT_OFFICES);
-  },
-  getPrices() {
-    const raw = localStorage.getItem(STORAGE_KEYS.prices);
-    // Merge saved prices over defaults so areas added after the user
-    // last saved (e.g. Hall, Outside) still get their default prices.
-    return raw
-      ? { ...structuredClone(DEFAULT_PRICES), ...JSON.parse(raw) }
-      : structuredClone(DEFAULT_PRICES);
-  },
-  savePrices(prices) {
-    localStorage.setItem(STORAGE_KEYS.prices, JSON.stringify(prices));
-  },
-  getOrders() {
-    const raw = localStorage.getItem(STORAGE_KEYS.orders);
-    return raw ? JSON.parse(raw) : [];
-  },
-  addOrder(order) {
-    const orders = Store.getOrders();
-    orders.unshift(order);
-    localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
-    return orders;
-  },
-  updateOrderStatus(orderId, status) {
-    const orders = Store.getOrders();
-    const order = orders.find((o) => o.id === orderId);
-    if (order) order.status = status;
-    localStorage.setItem(STORAGE_KEYS.orders, JSON.stringify(orders));
-    return orders;
-  },
 };

@@ -49,25 +49,24 @@ header.top h1 {
   white-space: nowrap;
 }
 
-header.top nav {
+.whoami {
   display: flex;
-  gap: 4px;
-}
-
-header.top nav a {
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
   color: var(--text-dim);
-  text-decoration: none;
-  margin-left: 0;
-  font-size: 14px;
-  padding: 6px 12px;
-  border-radius: 8px;
 }
+.whoami b { color: var(--text); font-weight: 600; }
 
-header.top nav a.active,
-header.top nav a:hover {
-  color: var(--text);
-  background: var(--panel-2);
+.linkbtn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 4px;
 }
+.linkbtn:hover { text-decoration: underline; }
 
 main {
   max-width: 1000px;
@@ -492,6 +491,11 @@ table.price-table tr:last-child td { border-bottom: none; }
 .plate.office-malek.pad .f-south { fill: #b1837b; stroke: #b1837b; }
 .plate.office-malek.pad .f-east  { fill: #8e645d; stroke: #8e645d; }
 
+/* Has an active pot (money bid on it): a warm gold slab so it stands out */
+.plate.has-pot .f-top   { fill: #e5c26a; stroke: #e5c26a; }
+.plate.has-pot .f-south { fill: #c4a256; stroke: #c4a256; }
+.plate.has-pot .f-east  { fill: #a08544; stroke: #a08544; }
+
 /* Selected: the slab rises and turns a confident soft blue */
 .plate.selected .f-top,   .plate.pad.selected .f-top   { fill: #7da2f5; stroke: #7da2f5; }
 .plate.selected .f-south, .plate.pad.selected .f-south { fill: #5b7bd1; stroke: #5b7bd1; }
@@ -531,6 +535,8 @@ table.price-table tr:last-child td { border-bottom: none; }
 
 .room-label-g.selected .room-label { fill: #ffffff; }
 .room-label-g.selected .room-price-tag { fill: rgba(255, 255, 255, 0.85); }
+
+.room-label-g.has-pot .room-price-tag { fill: #3a2c05; font-weight: 800; }
 
 @media (min-width: 640px) {
   .room-label { font-size: 34px; }
@@ -572,3 +578,145 @@ table.price-table tr:last-child td { border-bottom: none; }
   border-radius: var(--radius);
   margin-bottom: 100px;
 }
+
+/* ============================================================
+   Bidding board: selected-area detail card + claim history
+   ============================================================ */
+
+.detail-empty {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  padding: 26px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.detail-card {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.detail-title { font-size: 17px; font-weight: 700; }
+
+.detail-pot {
+  font-size: 24px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: #e5c26a;
+}
+.detail-pot span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: right;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.chip {
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 5px 12px;
+  color: var(--text-dim);
+}
+.chip b { color: var(--text); font-weight: 600; }
+
+.detail-none { color: var(--text-dim); font-size: 13px; }
+
+.bid-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.bid-form .fld {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 14px;
+  min-width: 0;
+}
+.bid-form .fld:focus { outline: none; border-color: var(--accent); }
+.bid-form .fld:first-child { flex: 1 1 auto; }
+.bid-form .fld.amt { width: 88px; flex: 0 0 auto; }
+.bid-form .btn { flex: 0 0 auto; }
+
+.btn.claim {
+  width: 100%;
+  background: var(--good);
+}
+.btn.claim:hover:not(:disabled) { background: #2aa866; }
+
+@media (max-width: 460px) {
+  .bid-form { flex-wrap: wrap; }
+  .bid-form .fld:first-child { flex: 1 1 100%; }
+  .bid-form .fld.amt { flex: 1 1 auto; width: auto; }
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 60px;
+}
+
+.history-card {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 13px 16px;
+}
+.history-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.history-area { font-weight: 600; font-size: 14px; }
+.history-amt { font-weight: 800; color: var(--good); white-space: nowrap; }
+.history-sub { color: var(--text-dim); font-size: 12px; margin-top: 5px; }
+.history-sub b { color: var(--text); }
+.history-contribs { color: var(--text-dim); font-size: 12px; margin-top: 3px; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translate(-50%, 20px);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  max-width: 90vw;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s, transform .2s;
+  z-index: 20;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }

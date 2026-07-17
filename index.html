@@ -3,53 +3,31 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Book a Cleaning</title>
+<title>Cleaning Bids</title>
 <!-- ?v= busts the browser/Pages cache — bump it whenever js/css change -->
-<link rel="stylesheet" href="style.css?v=6" />
+<link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
 <header class="top">
-  <h1>🧹 Office Cleaning</h1>
-  <nav>
-    <a href="index.html" class="active">Book</a>
-    <a href="admin.html">Admin</a>
-  </nav>
+  <h1>🧹 Cleaning Bids</h1>
+  <div class="whoami">You: <b id="userNameLabel">—</b><button id="changeNameBtn" class="linkbtn">change</button></div>
 </header>
 
 <main>
-  <div class="success-banner" id="successBanner">Request sent! It now shows up in the admin account.</div>
+  <div class="toast" id="toast"></div>
 
-  <div class="section-label">Tap a room to select it</div>
+  <div class="section-label">Tap an area to bid or claim</div>
   <div class="floorplan-wrap" id="floorPlanWrap"></div>
 
-  <div class="section-label">Selected areas</div>
-  <div class="selected-panel" id="selectedPanel"></div>
+  <div id="detailPanel"></div>
+
+  <div class="section-label" style="margin-top:26px;">Claim history</div>
+  <div id="historyList" class="history-list"></div>
 </main>
 
-<div class="summary-bar">
-  <div class="summary-inner">
-    <div class="summary-text" id="summaryText">Select rooms to clean</div>
-    <div style="display:flex; align-items:center; gap:18px;">
-      <div class="summary-total"><span>Total</span>$<span id="totalPrice">0</span></div>
-      <button class="btn" id="confirmBtn" disabled>Review &amp; Confirm</button>
-    </div>
-  </div>
-</div>
-
-<div class="overlay" id="modalOverlay">
-  <div class="modal">
-    <h2 id="modalOfficeName"></h2>
-    <div class="sub">Confirm this cleaning request</div>
-    <div id="modalLines"></div>
-    <div class="modal-total"><span>Total</span><span id="modalTotal">$0</span></div>
-    <div class="modal-actions">
-      <button class="btn secondary" id="cancelBtn">Cancel</button>
-      <button class="btn" id="submitBtn">Confirm Request</button>
-    </div>
-  </div>
-</div>
-
-<script src="config.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase.js?v=7"></script>
+<script src="config.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

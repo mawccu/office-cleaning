@@ -1,64 +1,81 @@
-const offices = Store.getOffices();
-const prices = Store.getPrices();
+/* ============================================================
+   Cleaning Bids board.
+
+   The "areas" are the rooms in the floor plan (config.js). Anyone can add
+   money to an area's POT (a bid: amount + their name). Bids on the same
+   area stack — $3 + $2 = a $5 pot. Anyone can then CLAIM an area: that
+   records a claim in the history for the pot total and clears the area's
+   bids so it reopens for new ones.
+
+   All data lives in Supabase (supabase.js). The board subscribes to
+   realtime changes, so every open device updates the moment someone
+   bids or claims.
+   ============================================================ */
+
+const offices = OFFICES;
 const officeIds = Object.keys(offices);
 
-// selections[officeId][roomId] = tierId | null
-let selections = {};
-function resetSelections() {
-  selections = {};
-  officeIds.forEach((officeId) => {
-    selections[officeId] = {};
-    offices[officeId].rooms.forEach((r) => (selections[officeId][r.id] = null));
-  });
-}
-resetSelections();
+// ---- live data from Supabase ----
+let bids = [];       // { id, office_id, room_id, bidder_name, amount, created_at }
+let claims = [];     // { id, office_id, room_id, claimed_by, total_amount, contributors, created_at }
+let selectedArea = null; // { officeId, roomId } | null
 
+// ---- who am I (just a name, stored locally) ----
+function userName() { return (localStorage.getItem("bidder_name") || "").trim(); }
+function setUserName(n) { localStorage.setItem("bidder_name", (n || "").trim()); }
+
+// ---- DOM ----
 const floorPlanWrapEl = document.getElementById("floorPlanWrap");
-const selectedPanelEl = document.getElementById("selectedPanel");
-const summaryTextEl = document.getElementById("summaryText");
-const totalPriceEl = document.getElementById("totalPrice");
-const confirmBtn = document.getElementById("confirmBtn");
-const modalOverlay = document.getElementById("modalOverlay");
-const modalOfficeName = document.getElementById("modalOfficeName");
-const modalLines = document.getElementById("modalLines");
-const modalTotal = document.getElementById("modalTotal");
-const successBanner = document.getElementById("successBanner");
+const detailPanelEl = document.getElementById("detailPanel");
+const historyListEl = document.getElementById("historyList");
+const toastEl = document.getElementById("toast");
+const userNameLabel = document.getElementById("userNameLabel");
+const changeNameBtn = document.getElementById("changeNameBtn");
 
-function priceFor(officeId, roomId, tierId) {
-  return prices[officeId]?.[roomId]?.[tierId] ?? 0;
+// ---- helpers ----
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (m) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
-
+function money(n) {
+  const v = Number(n) || 0;
+  return Number.isInteger(v) ? String(v) : v.toFixed(2);
+}
+function fmtDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
 function roomName(officeId, roomId) {
-  return offices[officeId].rooms.find((r) => r.id === roomId)?.name ?? roomId;
+  return offices[officeId]?.rooms.find((r) => r.id === roomId)?.name ?? roomId;
+}
+function officeLabel(officeId) {
+  return offices[officeId]?.label ?? officeId;
+}
+function areaBids(officeId, roomId) {
+  return bids.filter((b) => b.office_id === officeId && b.room_id === roomId);
+}
+function potFor(officeId, roomId) {
+  return areaBids(officeId, roomId).reduce((s, b) => s + Number(b.amount), 0);
 }
 
-function tierLabel(tierId) {
-  return TIERS.find((t) => t.id === tierId)?.label ?? "";
-}
-
-function toggleRoom(officeId, roomId) {
-  selections[officeId][roomId] = selections[officeId][roomId] ? null : "standard";
-  renderFloorPlan();
-  renderSelectedPanel();
-  renderSummary();
-}
-
-function setTier(officeId, roomId, tierId) {
-  selections[officeId][roomId] = tierId;
-  renderFloorPlan();
-  renderSelectedPanel();
-  renderSummary();
+let toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3200);
 }
 
 /* ============================================================
    Isometric "dollhouse" renderer.
 
-   The FLOOR_PLAN geometry in config.js is ground truth (traced from
-   the real reference plan) — this code only changes how it's DRAWN:
-   a 2:1 isometric projection where every room is an extruded slab
-   (visible top face + south/east side faces), the real walls stand
-   on top of the slab with their door gaps kept open, and selecting
-   a room smoothly lifts its slab out of the model.
+   The FLOOR_PLAN geometry in config.js is ground truth (traced from the
+   real reference plan) — this code only changes how it's DRAWN: a 2:1
+   isometric projection where every room is an extruded slab (visible top
+   face + south/east side faces), the real walls stand on top of the slab
+   with their door gaps kept open, and selecting an area smoothly lifts
+   its slab out of the model.
    ============================================================ */
 
 const ISO_BASE = 16;   // slab thickness (z of every room's floor top)
@@ -69,22 +86,9 @@ const WALL_T  = 12;    // wall thickness
 // Rendering-only relationships: some rooms sit ON another room's slab
 // (they overlap it in plan), so their side faces must start at the
 // parent slab's top — and ride along when the parent slab is lifted.
-// pad > 0 draws the zone as a slightly raised platform (the wall-less
-// zones in Malek's office, marked only by door frames in the reference).
 const PLATE_RENDER = {
-  // Moha's bathroom is carved into the NE corner of the Desks area, but
-  // north of y=532 there is no Desks slab behind its east face (that
-  // stretch borders the hall directly) — split the face: the north part
-  // drops to ground, the south part stops at the Desks slab top.
   "moha:bathroom": { parent: "desks", pad: 0, southBottom: "parent", eastSplit: 532 },
-  // Dishwashing Area is a small corner room walled off INSIDE the
-  // Kitchen (beside the hall door), so it sits on the Kitchen's slab and
-  // rides its lift; its south + east edges both stop at the Kitchen's
-  // boundary, where the Kitchen's own skirt takes over below.
   "malek:dishwashing": { parent: "kitchen", pad: 0, southBottom: "parent", eastBottom: "parent" },
-  // Malek's Bathroom is carved out of the (much bigger) Desks footprint —
-  // its south edge borders Desks; its east edge is the building's real
-  // exterior, so it's left as ground.
   "malek:bathroom": { parent: "desks", pad: 0, southBottom: "parent" },
 };
 
@@ -94,25 +98,16 @@ function isoPt(x, y, z = 0) {
 function ptsAttr(points) {
   return points.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
 }
-
 function shapeKey(s) {
   return `${s.officeId}:${s.id}`;
 }
 
 // Stable per-shape identity (distinct from shapeKey, which is per-ROOM and
 // intentionally shared by multi-piece rooms like the L-shaped Chill Area).
-// Every DOM element needs its OWN entry, or the second piece of a
-// multi-piece room silently steals the first piece's polygon references
-// during the lift tween and corrupts its geometry every frame.
 FLOOR_PLAN.shapes.forEach((s, i) => { s.__i = i; });
 
-// Rectilinear union of axis-aligned rects -> ordered boundary polygon
-// (world x/y units). Used so a multi-piece room (e.g. the L-shaped Chill
-// Area, drawn as 2 touching rects) gets ONE floor polygon instead of 2
-// separate ones — two same-color adjacent SVG polygons still show a
-// faint seam along their shared edge (independent per-polygon
-// antialiasing), even with identical fill and stroke. One polygon has no
-// seam to show.
+// Rectilinear union of axis-aligned rects -> ordered boundary polygon,
+// so a multi-piece room gets ONE seamless floor polygon instead of two.
 function unionOutline(rects) {
   const xs = [...new Set(rects.flatMap((r) => [r.x, r.x + r.w]))].sort((a, b) => a - b);
   const ys = [...new Set(rects.flatMap((r) => [r.y, r.y + r.h]))].sort((a, b) => a - b);
@@ -122,9 +117,6 @@ function unionOutline(rects) {
     const y0 = ys.indexOf(r.y), y1 = ys.indexOf(r.y + r.h);
     for (let i = x0; i < x1; i++) for (let j = y0; j < y1; j++) filled.add(`${i},${j}`);
   }
-  // Every boundary edge of every filled grid cell either cancels out
-  // against the identical (reversed) edge of a neighboring filled cell,
-  // or survives — the surviving edges are exactly the outer boundary.
   const edges = new Map();
   const toggle = (x1, y1, x2, y2) => {
     const rev = `${x2},${y2},${x1},${y1}`;
@@ -156,8 +148,6 @@ function unionOutline(rects) {
   return loop;
 }
 
-// Precompute each multi-piece room's combined floor outline once (static
-// geometry, independent of lift/selection state).
 const ROOM_TOP_OUTLINE = new Map();
 {
   const groups = new Map();
@@ -173,9 +163,11 @@ const ROOM_TOP_OUTLINE = new Map();
 
 // Current + target lift per shape (world units), tweened.
 const liftCur = {};
+function isSelected(officeId, roomId) {
+  return !!selectedArea && selectedArea.officeId === officeId && selectedArea.roomId === roomId;
+}
 function liftTarget(officeId, roomId) {
-  // deco shapes (the shared hall) belong to no office and never lift
-  return selections[officeId]?.[roomId] ? ISO_LIFT : 0;
+  return isSelected(officeId, roomId) ? ISO_LIFT : 0;
 }
 
 function plateGeom(s) {
@@ -190,21 +182,11 @@ function plateGeom(s) {
   const polys = {};
   const unionPts = ROOM_TOP_OUTLINE.get(key);
   if (unionPts) {
-    // Multi-piece room: only the FIRST piece (lowest __i) draws the shared
-    // floor polygon, traced from the union outline — the other piece(s)
-    // draw no top face at all, so there's no second polygon to seam
-    // against. Both still get their own south/east walls and both still
-    // sit in their own clickable <g>, but only one owns the floor.
     const isFirst = s.__i === Math.min(...FLOOR_PLAN.shapes.filter((o) => shapeKey(o) === key).map((o) => o.__i));
     if (isFirst) polys.top = unionPts.map(([x, y]) => isoPt(x, y, top));
   } else {
     polys.top = [isoPt(s.x, s.y, top), isoPt(x2, s.y, top), isoPt(x2, y2, top), isoPt(s.x, y2, top)];
   }
-  // Pieces of a multi-piece room only get side faces along the room's
-  // OUTER boundary. Without this, the wide half of the L-shaped Chill
-  // Area painted its full south skirt straight across the stem piece's
-  // floor — a dark band through the middle of the room. Cut away any
-  // stretch of a face where a sibling piece continues past that edge.
   const siblings = FLOOR_PLAN.shapes.filter((o) => o !== s && shapeKey(o) === key);
   if (siblings.length) {
     const cut = (lo, hi, cuts) => {
@@ -246,20 +228,7 @@ function plateGeom(s) {
   return { polys, top };
 }
 
-// Split walls into solid pieces around their door gaps, as 3D boxes.
-// A long wall (e.g. a full-height exterior wall) spans a wide RANGE of
-// depths along its own length. Giving it one single depth key for sorting
-// means that key can only be "right" for one point along the wall — at
-// every other point it either wrongly hides things in front of it or
-// wrongly gets hidden by things behind it. The building's tall exterior
-// wall was doing exactly that: its one east-facing polygon runs its whole
-// length, so it silently painted over a short interior wall it only
-// crosses briefly. Fix: chunk any wall span longer than CHUNK into shorter
-// pieces before turning it into a box, so each piece's depth key stays
-// locally accurate. Adjacent chunks still render pixel-flush, so visually
-// it's still one continuous wall.
 const WALL_CHUNK = 70;
-
 function wallBoxes() {
   const boxes = [];
   for (const w of FLOOR_PLAN.walls || []) {
@@ -279,11 +248,6 @@ function wallBoxes() {
       const n = Math.max(1, Math.ceil(len / WALL_CHUNK));
       const step = len / n;
       for (let k = 0; k < n; k++) {
-        // Overlap each chunk 2 units into the next one: perfectly flush
-        // chunks still show a hairline seam at every boundary (each
-        // polygon antialiases independently), which made long walls read
-        // as a row of separate bricks. Overlapping same-color coplanar
-        // faces can't seam.
         const segA = a + step * k, segB = Math.min(b, a + step * (k + 1) + 2);
         boxes.push(
           horizontal
@@ -306,9 +270,8 @@ function wallPolys(b) {
   };
 }
 
-// Split long room names onto two lines so they fit narrow rooms.
 function labelLines(name, s) {
-  const spanUnits = s.w + s.h; // projected horizontal extent of the top face
+  const spanUnits = s.w + s.h;
   if (name.length * 34 > spanUnits * 0.9 && name.includes(" ")) {
     const words = name.split(" ");
     const mid = Math.ceil(words.length / 2);
@@ -317,7 +280,7 @@ function labelLines(name, s) {
   return [name];
 }
 
-let isoScene = null; // { shapeEls: Map key -> {group, polys:{}, labelG, nameEl, tagEl}, }
+let isoScene = null;
 let tweenRAF = null;
 
 function computeViewBox(walls) {
@@ -345,37 +308,18 @@ function computeViewBox(walls) {
       add(isoPt(b.x, b.y + b.h, z));
     }
   }
-  const mx = 46, mTop = 26, mBottom = 52; // room for the soft ground shadow
+  const mx = 46, mTop = 26, mBottom = 52;
   return { x: minX - mx, y: minY - mTop, w: maxX - minX + mx * 2, h: maxY - minY + mTop + mBottom };
 }
 
 function buildScene() {
-  // Seed lift state.
   for (const s of FLOOR_PLAN.shapes) {
     liftCur[shapeKey(s)] = liftTarget(s.officeId, s.id);
   }
 
-  // Depth-sort by each box's CENTER point (not its far corner) — using the
-  // far corner made long/tall boxes (like the full-height exterior walls)
-  // sort as if they were "further forward" than they really are, purely
-  // because their bounding box is big, which let a tall exterior wall
-  // paint over a short interior wall it merely shares a corner with. The
-  // center point is a fair depth proxy regardless of a box's size. Plates
-  // and walls stay in two separate layers (all plates, then all walls) —
-  // a plate's south/east face is a tall skirt running from roofline to
-  // ground along that whole edge, so mixing it into the same pass as a
-  // thin wall on that edge risks the plate's key outranking the wall that
-  // should always read as standing in front of it.
   const farKey = (b) => (b.x + b.w / 2) + (b.y + b.h / 2);
   const walls = wallBoxes().sort((a, b) => farKey(a) - farKey(b));
 
-  // A shape with a PLATE_RENDER "parent" (e.g. Dishwashing Area sitting
-  // inside Desks' footprint) must always paint — and hit-test clicks —
-  // after its parent, no matter what the raw depth key says. Desks is a
-  // big room, so its CENTER can sort "later" than a small room resting on
-  // top of it purely because of size, which would wrongly bury (and steal
-  // clicks from) the room that's actually in front. Bump each child's
-  // effective key past its parent's to guarantee correct order.
   const rawKey = new Map(FLOOR_PLAN.shapes.map((s) => [s, farKey(s)]));
   for (const s of FLOOR_PLAN.shapes) {
     const parentId = PLATE_RENDER[shapeKey(s)]?.parent;
@@ -388,7 +332,6 @@ function buildScene() {
   const shapes = [...FLOOR_PLAN.shapes].sort((a, b) => rawKey.get(a) - rawKey.get(b));
   const vb = computeViewBox(walls);
 
-  // Soft ground shadow: every room footprint (inflated) at z=0, blurred.
   const shadowHtml = FLOOR_PLAN.shapes
     .map((s) => {
       const g = 14;
@@ -426,13 +369,11 @@ function buildScene() {
   const labelsHtml = FLOOR_PLAN.shapes
     .filter((s) => s.label !== false)
     .map((s) => {
-      // lx/ly let a room pin its label off-center (e.g. Kitchen's label
-      // clears the Dishwashing corner room carved out of its SE corner)
       const cx = s.lx ?? s.x + s.w / 2, cy = s.ly ?? s.y + s.h / 2;
       const [px, py] = isoPt(cx, cy, 0);
       const lines = labelLines(roomName(s.officeId, s.id), s);
       const nameTspans = lines
-        .map((ln, i) => `<tspan x="${px.toFixed(1)}" dy="${i === 0 ? (lines.length > 1 ? "-0.62em" : "0") : "1.12em"}">${ln}</tspan>`)
+        .map((ln, i) => `<tspan x="${px.toFixed(1)}" dy="${i === 0 ? (lines.length > 1 ? "-0.62em" : "0") : "1.12em"}">${esc(ln)}</tspan>`)
         .join("");
       return `<g class="room-label-g" data-office="${s.officeId}" data-room="${s.id}">
         <text class="room-label" x="${px.toFixed(1)}" y="${py.toFixed(1)}">${nameTspans}</text>
@@ -456,13 +397,9 @@ function buildScene() {
       </svg>
     </div>
     <div class="floorplan-legend">
-      ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${offices[id].label}</div>`).join("")}
+      ${officeIds.map((id) => `<div class="legend-item"><span class="swatch office-${id}"></span>${esc(offices[id].label)}</div>`).join("")}
     </div>`;
 
-  // Keyed per SHAPE INSTANCE (s.__i), not per room — a multi-piece room
-  // like Chill Area has two separate <g class="plate"> elements in the DOM
-  // and each needs its own polygon references, or the tween loop below
-  // will happily overwrite one piece's geometry with the other's.
   isoScene = { shapeEls: new Map() };
   const svg = floorPlanWrapEl.querySelector("svg");
   svg.querySelectorAll(".plate").forEach((group) => {
@@ -478,7 +415,7 @@ function buildScene() {
       labelG,
       tagEl: labelG ? labelG.querySelector(".room-price-tag") : null,
     });
-    if (!s.deco) group.addEventListener("click", () => toggleRoom(s.officeId, s.id));
+    if (!s.deco) group.addEventListener("click", () => selectArea(s.officeId, s.id));
   });
 }
 
@@ -514,136 +451,184 @@ function startLiftTween() {
 
 function renderFloorPlan() {
   if (!isoScene) buildScene();
-  // Sync selection classes + label text, then tween slab heights.
   for (const s of FLOOR_PLAN.shapes) {
     const entry = isoScene.shapeEls.get(s.__i);
-    const tier = selections[s.officeId]?.[s.id];
-    entry.group.classList.toggle("selected", !!tier);
+    const sel = isSelected(s.officeId, s.id);
+    const pot = potFor(s.officeId, s.id);
+    entry.group.classList.toggle("selected", sel);
+    entry.group.classList.toggle("has-pot", pot > 0 && !sel);
     if (entry.labelG) {
-      entry.labelG.classList.toggle("selected", !!tier);
-      if (entry.tagEl) {
-        entry.tagEl.textContent = tier
-          ? `$${priceFor(s.officeId, s.id, tier)} · ${tierLabel(tier)}`
-          : "";
-      }
+      entry.labelG.classList.toggle("selected", sel);
+      entry.labelG.classList.toggle("has-pot", pot > 0 && !sel);
+      if (entry.tagEl) entry.tagEl.textContent = pot > 0 ? `$${money(pot)}` : "";
     }
   }
   startLiftTween();
 }
 
-function getActiveSelections() {
-  const active = [];
-  officeIds.forEach((officeId) => {
-    Object.entries(selections[officeId]).forEach(([roomId, tier]) => {
-      if (!tier) return;
-      active.push({
-        officeId,
-        officeName: offices[officeId].label,
-        roomId,
-        roomName: roomName(officeId, roomId),
-        tier,
-        price: priceFor(officeId, roomId, tier),
-      });
-    });
-  });
-  return active;
+/* ============================================================
+   Bidding + claim UI
+   ============================================================ */
+
+function selectArea(officeId, roomId) {
+  selectedArea = isSelected(officeId, roomId) ? null : { officeId, roomId };
+  renderFloorPlan();
+  renderDetail();
 }
 
-function renderSelectedPanel() {
-  const active = getActiveSelections();
-  if (!active.length) {
-    selectedPanelEl.innerHTML = `<div class="selected-empty">Tap rooms in the floor plan above to add them here.</div>`;
+function renderDetail() {
+  if (!selectedArea) {
+    detailPanelEl.innerHTML = `<div class="detail-empty">Tap an area on the plan to add money to its pot, or to claim it.</div>`;
     return;
   }
+  const { officeId, roomId } = selectedArea;
+  const name = roomName(officeId, roomId);
+  const office = officeLabel(officeId);
+  const pot = potFor(officeId, roomId);
+  const contributors = areaBids(officeId, roomId);
+  const nm = userName();
 
-  selectedPanelEl.innerHTML = active
-    .map(
-      (a) => `
-    <div class="room-card selected">
-      <div class="room-head" data-remove-office="${a.officeId}" data-remove="${a.roomId}">
-        <div class="room-name">${a.roomName}${a.officeName !== a.roomName ? `<span class="room-office-tag">${a.officeName}</span>` : ""}</div>
-        <div class="checkbox"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg></div>
-      </div>
-      <div class="tier-row">
-        ${TIERS.map(
-          (tier) => `
-          <div class="tier-btn ${a.tier === tier.id ? "active" : ""}" data-tier="${tier.id}" data-office="${a.officeId}" data-room="${a.roomId}">
-            ${tier.label}<span class="price">$${priceFor(a.officeId, a.roomId, tier.id)}</span>
-          </div>`
-        ).join("")}
-      </div>
-    </div>`
-    )
-    .join("");
+  const chips = contributors.length
+    ? contributors
+        .map((b) => `<span class="chip"><b>${esc(b.bidder_name)}</b> $${money(b.amount)}</span>`)
+        .join("")
+    : `<span class="detail-none">No bids yet — be the first to add to the pot.</span>`;
 
-  selectedPanelEl.querySelectorAll("[data-remove]").forEach((el) => {
-    el.addEventListener("click", () => toggleRoom(el.dataset.removeOffice, el.dataset.remove));
-  });
-  selectedPanelEl.querySelectorAll("[data-tier]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.stopPropagation();
-      setTier(el.dataset.office, el.dataset.room, el.dataset.tier);
+  detailPanelEl.innerHTML = `
+    <div class="detail-card">
+      <div class="detail-head">
+        <div class="detail-title">${esc(name)}${office !== name ? `<span class="room-office-tag">${esc(office)}</span>` : ""}</div>
+        <div class="detail-pot"><span>Pot</span>$${money(pot)}</div>
+      </div>
+      <div class="chips">${chips}</div>
+
+      <div class="bid-form">
+        <input id="nameInput" class="fld" type="text" placeholder="Your name" value="${esc(nm)}" autocomplete="name" />
+        <input id="amtInput" class="fld amt" type="number" inputmode="decimal" min="1" step="1" placeholder="$" />
+        <button id="addBidBtn" class="btn">Add to pot</button>
+      </div>
+
+      <button id="claimBtn" class="btn claim" ${pot > 0 ? "" : "disabled"}>
+        ${pot > 0 ? `Claim &amp; clean · collect $${money(pot)}` : "Nothing to claim yet"}
+      </button>
+    </div>`;
+
+  const nameInput = document.getElementById("nameInput");
+  const amtInput = document.getElementById("amtInput");
+  nameInput.addEventListener("change", () => { setUserName(nameInput.value); updateWhoami(); });
+  amtInput.addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("addBidBtn").click(); });
+  document.getElementById("addBidBtn").addEventListener("click", () =>
+    onAddBid(officeId, roomId, nameInput.value.trim(), amtInput.value));
+  document.getElementById("claimBtn").addEventListener("click", () =>
+    onClaim(officeId, roomId, nameInput.value.trim()));
+}
+
+async function onAddBid(officeId, roomId, name, amountRaw) {
+  const amount = Number(amountRaw);
+  if (!name) return toast("Enter your name first");
+  if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
+  setUserName(name);
+  updateWhoami();
+  try {
+    const { error } = await sb.from("bids").insert({
+      office_id: officeId, room_id: roomId, bidder_name: name, amount,
     });
-  });
+    if (error) throw error;
+    toast(`Added $${money(amount)} to ${roomName(officeId, roomId)}`);
+    await reload();
+  } catch (e) {
+    toast("Could not add bid: " + (e.message || e));
+  }
 }
 
-function renderSummary() {
-  const active = getActiveSelections();
-  const total = active.reduce((sum, a) => sum + a.price, 0);
-  totalPriceEl.textContent = total;
-  summaryTextEl.textContent = active.length
-    ? `${active.length} area${active.length > 1 ? "s" : ""} selected`
-    : "Select rooms to clean";
-  confirmBtn.disabled = active.length === 0;
+async function onClaim(officeId, roomId, name) {
+  const pot = potFor(officeId, roomId);
+  if (pot <= 0) return;
+  if (!name) return toast("Enter your name first");
+  if (!confirm(`Claim ${roomName(officeId, roomId)} and collect $${money(pot)}? You'll go and clean it.`)) return;
+  setUserName(name);
+  updateWhoami();
+  try {
+    const { error } = await sb.rpc("claim_area", {
+      p_office_id: officeId, p_room_id: roomId, p_claimed_by: name,
+    });
+    if (error) throw error;
+    toast(`You claimed ${roomName(officeId, roomId)} · $${money(pot)}`);
+    selectedArea = null;
+    await reload();
+  } catch (e) {
+    toast("Could not claim: " + (e.message || e));
+  }
 }
 
-confirmBtn.addEventListener("click", () => {
-  const active = getActiveSelections();
-  if (!active.length) return;
-  const involvedOffices = [...new Set(active.map((a) => a.officeName))];
-  modalOfficeName.textContent = involvedOffices.join(" + ");
-  modalLines.innerHTML = active
-    .map(
-      (a) => `
-      <div class="modal-line">
-        <div>
-          <div class="room">${a.roomName}${a.officeName !== a.roomName ? `<span class="tier"> · ${a.officeName}</span>` : ""}</div>
-          <div class="tier">${tierLabel(a.tier)} clean</div>
+function renderHistory() {
+  if (!claims.length) {
+    historyListEl.innerHTML = `<div class="detail-empty">No areas claimed yet.</div>`;
+    return;
+  }
+  historyListEl.innerHTML = claims
+    .map((c) => {
+      const contribs = (c.contributors || [])
+        .map((x) => `${esc(x.name)} $${money(x.amount)}`)
+        .join(", ");
+      return `<div class="history-card">
+        <div class="history-top">
+          <div class="history-area">${esc(roomName(c.office_id, c.room_id))}<span class="room-office-tag">${esc(officeLabel(c.office_id))}</span></div>
+          <div class="history-amt">$${money(c.total_amount)}</div>
         </div>
-        <div class="price">$${a.price}</div>
-      </div>`
-    )
+        <div class="history-sub">Claimed by <b>${esc(c.claimed_by)}</b> · ${esc(fmtDate(c.created_at))}</div>
+        ${contribs ? `<div class="history-contribs">from ${contribs}</div>` : ""}
+      </div>`;
+    })
     .join("");
-  const total = active.reduce((sum, a) => sum + a.price, 0);
-  modalTotal.textContent = `$${total}`;
-  modalOverlay.classList.add("open");
-});
+}
 
-document.getElementById("cancelBtn").addEventListener("click", () => {
-  modalOverlay.classList.remove("open");
-});
+/* ============================================================
+   Data loading + realtime
+   ============================================================ */
 
-document.getElementById("submitBtn").addEventListener("click", () => {
-  const active = getActiveSelections();
-  const total = active.reduce((sum, a) => sum + a.price, 0);
-  const involvedOffices = [...new Set(active.map((a) => a.officeName))];
-  Store.addOrder({
-    id: crypto.randomUUID(),
-    officeName: involvedOffices.join(" + "),
-    items: active,
-    total,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  });
-  modalOverlay.classList.remove("open");
-  resetSelections();
+async function reload() {
+  try {
+    const [bidsRes, claimsRes] = await Promise.all([
+      sb.from("bids").select("*").order("created_at", { ascending: true }),
+      sb.from("claims").select("*").order("created_at", { ascending: false }).limit(50),
+    ]);
+    if (bidsRes.error) throw bidsRes.error;
+    if (claimsRes.error) throw claimsRes.error;
+    bids = bidsRes.data || [];
+    claims = claimsRes.data || [];
+  } catch (e) {
+    toast("Connection issue: " + (e.message || e));
+  }
   renderFloorPlan();
-  renderSelectedPanel();
-  renderSummary();
-  successBanner.classList.add("open");
-  setTimeout(() => successBanner.classList.remove("open"), 4000);
+  renderDetail();
+  renderHistory();
+}
+
+function subscribeRealtime() {
+  sb.channel("board")
+    .on("postgres_changes", { event: "*", schema: "public", table: "bids" }, reload)
+    .on("postgres_changes", { event: "*", schema: "public", table: "claims" }, reload)
+    .subscribe();
+}
+
+function updateWhoami() {
+  userNameLabel.textContent = userName() || "—";
+}
+
+changeNameBtn.addEventListener("click", () => {
+  const n = prompt("Your name (shown on your bids and claims):", userName());
+  if (n != null) {
+    setUserName(n);
+    updateWhoami();
+    renderDetail();
+  }
 });
 
+// ---- boot ----
+updateWhoami();
 renderFloorPlan();
-renderSelectedPanel();
-renderSummary();
+renderDetail();
+renderHistory();
+reload();
+subscribeRealtime();
