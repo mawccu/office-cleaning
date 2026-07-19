@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="landing.css?v=17" />
+  <link rel="stylesheet" href="landing.css?v=18" />
 </head>
 <body>
   <!-- NAV -->
@@ -151,15 +151,15 @@
       <div class="join__grid">
         <div class="join__copy">
           <h2 class="join__head">Put your name down.<br />Keep the spot alive.</h2>
-          <p>Drop your name and a PIN — that's your login for the whole app (cleaning, requests, projects). Everyone who's in goes up on the wall: that's the crew keeping this thing going.</p>
+          <p>Pick a username and a password — that's your login for the whole app (cleaning, requests, projects). Everyone who's in goes up on the wall: that's the crew keeping this thing going.</p>
           <form class="join__form" id="joinForm" novalidate>
             <div class="field">
-              <label for="name">Your name</label>
-              <input id="name" name="name" type="text" autocomplete="name" placeholder="e.g. Malek" required />
+              <label for="name">Username</label>
+              <input id="name" name="name" type="text" autocomplete="username" placeholder="e.g. Malek" required />
             </div>
             <div class="field">
-              <label for="pin">Pick a PIN <span>(4+ digits)</span></label>
-              <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="you'll use this to sign in" />
+              <label for="pin">Password <span>(new accounts: 8+ characters)</span></label>
+              <input id="pin" name="pin" type="password" autocomplete="current-password" placeholder="your password" />
             </div>
             <button type="submit" class="btn btn--solid btn--full">I'm in &rarr;</button>
             <p class="join__note" id="joinNote" role="status"></p>
@@ -190,7 +190,7 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase.js?v=17"></script>
-  <script src="landing.js?v=17"></script>
+  <script src="supabase.js?v=18"></script>
+  <script src="landing.js?v=18"></script>
 </body>
 </html>

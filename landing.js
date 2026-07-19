@@ -67,24 +67,29 @@
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
       const name = nameField.value.trim();
-      const pin = (pinField.value || "").trim();
+      const pass = pinField.value || "";
       if (name.length < 2) {
-        note.textContent = "Please enter your name to join.";
+        note.textContent = "Please enter a username to join.";
         note.className = "join__note err"; nameField.focus(); return;
       }
-      if (pin.length < 4) {
-        note.textContent = "Pick a PIN (4+ digits) — it's how you sign in everywhere.";
+      if (!pass) {
+        note.textContent = "Enter a password (8+ characters if you're new).";
         note.className = "join__note err"; pinField.focus(); return;
       }
       const btn = form.querySelector("button[type=submit]");
       if (btn) btn.disabled = true;
       note.textContent = "Signing you in…"; note.className = "join__note";
       try {
-        let r = await sb.rpc("auth_user", { p_name: name, p_pin: pin });
+        // log in if the account exists, otherwise create it
+        let r = await sb.rpc("auth_user", { p_name: name, p_pin: pass });
+        if (r.error) {
+          if (pass.length < 8) throw new Error("New here? Your password needs 8+ characters.");
+          const s = await sb.rpc("sign_up", { p_name: name, p_pin: pass });
+          if (s.error) throw new Error(/taken/i.test(s.error.message) ? "That username exists — check your password." : s.error.message);
+        }
+        r = await sb.rpc("join_office", { p_name: name, p_pin: pass, p_pledge: 0 });
         if (r.error) throw r.error;
-        r = await sb.rpc("join_office", { p_name: name, p_pin: pin, p_pledge: 0 });
-        if (r.error) throw r.error;
-        auth = { name: name, pin: pin };
+        auth = { name: name, pin: pass };
         saveAuth(auth);
         await loadCrew(name);
         note.textContent = "You're in, " + name + ". The spot stays alive. Your desk is waiting.";

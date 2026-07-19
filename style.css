@@ -394,6 +394,14 @@ main { max-width: 1180px; margin: 0 auto; padding: 8px 18px 40px; }
 }
 .modal h2 { margin: 0 0 6px; font-family: "Space Grotesk", sans-serif; font-size: 20px; }
 .modal .sub { color: var(--muted); font-size: 13.5px; margin-bottom: 18px; }
+.auth-tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+.auth-tab {
+  flex: 1; border: 1px solid var(--border); background: transparent; color: var(--muted);
+  font-family: "Space Grotesk", sans-serif; font-weight: 600; font-size: 13.5px;
+  padding: 9px 8px; border-radius: 999px; cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.auth-tab:hover { color: var(--text); }
+.auth-tab.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .auth-fields { display: flex; flex-direction: column; gap: 10px; }
 .auth-fields .fld { width: 100%; }
 .auth-err { color: var(--accent); font-size: 13px; min-height: 16px; margin-top: 8px; }

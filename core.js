@@ -116,17 +116,42 @@ function renderNav(active) {
 }
 
 /* ============================================================
-   Identity — name + PIN, remembered in localStorage.
+   Identity — username + password account, remembered in localStorage.
+   (`auth.pin` carries the password so every existing RPC call is unchanged.)
    ============================================================ */
-let auth = null;                 // { name, pin }
+let auth = null;                 // { name, pin(=password) }
 let pendingAfterAuth = null;     // action to retry once signed in
 let onAuthChange = () => {};     // page sets this (re-render on sign in/out)
 let afterWrite = async () => {}; // page sets this (re-fetch after a write)
+let authMode = "login";          // "login" | "signup"
+
+// Build the log-in / sign-up modal (single source; the HTML gives the shell).
+(function buildAuthModal() {
+  const m = document.querySelector("#authOverlay .modal");
+  if (!m) return;
+  m.innerHTML = `
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-mode="login">Log in</button>
+      <button type="button" class="auth-tab" data-mode="signup">Create account</button>
+    </div>
+    <div class="sub" id="authSub">Welcome back — log in to your account.</div>
+    <div class="auth-fields">
+      <input id="authName" class="fld" type="text" placeholder="Username" autocomplete="username" />
+      <input id="authPin" class="fld" type="password" placeholder="Password" autocomplete="current-password" />
+    </div>
+    <div class="auth-err" id="authErr"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="authCancel" type="button">Cancel</button>
+      <button class="btn primary" id="authSubmit" type="button">Log in</button>
+    </div>
+    <div class="auth-foot" id="authFoot">Your username is your name across The Office. Passwords are kept encrypted.</div>`;
+})();
 
 const authOverlay = document.getElementById("authOverlay");
 const authName = document.getElementById("authName");
 const authPin = document.getElementById("authPin");
 const authErr = document.getElementById("authErr");
+const authSub = document.getElementById("authSub");
 const authSubmit = document.getElementById("authSubmit");
 const authCancel = document.getElementById("authCancel");
 const whoamiEl = document.getElementById("whoami");
@@ -135,9 +160,19 @@ function loadAuth() { try { auth = JSON.parse(localStorage.getItem("cb_auth") ||
 function saveAuth(a) { auth = a; localStorage.setItem("cb_auth", JSON.stringify(a)); updateWhoami(); }
 function clearAuth() { auth = null; localStorage.removeItem("cb_auth"); updateWhoami(); onAuthChange(); }
 
-function openAuth() {
+function setAuthMode(mode) {
+  authMode = mode === "signup" ? "signup" : "login";
+  const signup = authMode === "signup";
+  document.querySelectorAll(".auth-tab").forEach((t) => t.classList.toggle("active", t.dataset.mode === authMode));
+  if (authSubmit) authSubmit.textContent = signup ? "Create account" : "Log in";
+  if (authSub) authSub.textContent = signup ? "Pick a username and a password (8+ characters)." : "Welcome back — log in to your account.";
+  if (authPin) { authPin.placeholder = signup ? "Password (8+ characters)" : "Password"; authPin.setAttribute("autocomplete", signup ? "new-password" : "current-password"); }
+  if (authErr) authErr.textContent = "";
+}
+
+function openAuth(mode) {
   if (!authOverlay) return;
-  authErr.textContent = "";
+  setAuthMode(mode || (auth?.name ? "login" : authMode));
   authName.value = auth?.name || "";
   authPin.value = "";
   authOverlay.classList.add("open");
@@ -146,14 +181,16 @@ function openAuth() {
 function closeAuth() { if (authOverlay) authOverlay.classList.remove("open"); }
 
 async function submitAuth() {
-  const name = authName.value.trim(), pin = authPin.value.trim();
-  if (!name) { authErr.textContent = "Enter your name"; return; }
-  if (pin.length < 4) { authErr.textContent = "PIN must be at least 4 digits"; return; }
+  const name = authName.value.trim(), pass = authPin.value;
+  if (!name) { authErr.textContent = "Enter a username"; return; }
+  if (!pass) { authErr.textContent = "Enter your password"; return; }
+  if (authMode === "signup" && pass.length < 8) { authErr.textContent = "Password must be at least 8 characters"; return; }
   authSubmit.disabled = true;
   try {
-    const { error } = await sb.rpc("auth_user", { p_name: name, p_pin: pin });
+    const fn = authMode === "signup" ? "sign_up" : "auth_user";
+    const { error } = await sb.rpc(fn, { p_name: name, p_pin: pass });
     if (error) throw error;
-    saveAuth({ name, pin });
+    saveAuth({ name, pin: pass });
     closeAuth();
     await afterWrite();
     onAuthChange();
@@ -163,6 +200,21 @@ async function submitAuth() {
   } finally {
     authSubmit.disabled = false;
   }
+}
+
+async function changePassword() {
+  if (!auth) return;
+  const cur = prompt("Your current password:");
+  if (cur == null) return;
+  const nw = prompt("New password (at least 8 characters):");
+  if (nw == null) return;
+  if (nw.length < 8) return toast("Password must be at least 8 characters");
+  try {
+    const { error } = await sb.rpc("change_password", { p_name: auth.name, p_pin: cur, p_new: nw });
+    if (error) throw error;
+    saveAuth({ name: auth.name, pin: nw });
+    toast("Password changed");
+  } catch (e) { toast(e.message || String(e)); }
 }
 
 // Ensure we're signed in before an action; if not, open the modal and
@@ -187,7 +239,7 @@ async function callRpc(fn, params, okMsg) {
   } catch (e) {
     const msg = e.message || String(e);
     toast(msg);
-    if (/name or pin|taken with a different pin/i.test(msg)) { clearAuth(); openAuth(); }
+    if (/wrong username or password/i.test(msg)) { clearAuth(); openAuth("login"); }
     return false;
   }
 }
@@ -195,15 +247,17 @@ async function callRpc(fn, params, okMsg) {
 function updateWhoami() {
   if (!whoamiEl) return;
   if (auth) {
-    whoamiEl.innerHTML = `<span class="whoami-name">You <b>${esc(auth.name)}</b></span><button id="signOutBtn" class="linkbtn">sign out</button>`;
+    whoamiEl.innerHTML = `<span class="whoami-name">You <b>${esc(auth.name)}</b></span><button id="pwBtn" class="linkbtn">password</button><button id="signOutBtn" class="linkbtn">sign out</button>`;
+    document.getElementById("pwBtn").addEventListener("click", changePassword);
     document.getElementById("signOutBtn").addEventListener("click", clearAuth);
   } else {
-    whoamiEl.innerHTML = `<button id="signInBtn" class="linkbtn strong">Sign in</button>`;
-    document.getElementById("signInBtn").addEventListener("click", openAuth);
+    whoamiEl.innerHTML = `<button id="signInBtn" class="linkbtn strong">Log in</button>`;
+    document.getElementById("signInBtn").addEventListener("click", () => openAuth("login"));
   }
 }
 
 // ---- wire the auth modal (present on every page) ----
+document.querySelectorAll(".auth-tab").forEach((t) => t.addEventListener("click", () => setAuthMode(t.dataset.mode)));
 if (authSubmit) authSubmit.addEventListener("click", submitAuth);
 if (authCancel) authCancel.addEventListener("click", () => { pendingAfterAuth = null; closeAuth(); });
 if (authPin) authPin.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
