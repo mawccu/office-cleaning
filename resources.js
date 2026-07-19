@@ -39,7 +39,7 @@ function renderComposer() {
       <input id="rItem" class="fld" type="text" maxlength="120" placeholder="What does the office need? e.g. coffee beans, an HDMI cable" value="${esc(rItem)}" />
       <div class="bid-form">
         <input id="rQty" class="fld" type="text" maxlength="40" placeholder="How much / many (optional)" value="${esc(rQty)}" />
-        <button type="button" id="rUrgentBtn" class="cat-btn ${rUrgent ? "on" : ""}" style="white-space:nowrap">⚡ Urgent</button>
+        <button type="button" id="rUrgentBtn" class="cat-btn ${rUrgent ? "on" : ""}" style="white-space:nowrap">${icon("bolt")} Urgent</button>
       </div>
       <textarea id="rNote" class="fld note" rows="2" placeholder="Any detail (optional) — brand, where to get it, etc.">${esc(rNote)}</textarea>
       <div class="bid-form">

@@ -658,3 +658,16 @@ main { max-width: 1180px; margin: 0 auto; padding: 8px 18px 40px; }
 .volunteer-btn:hover .vb-heart { color: #fff; }
 .vb-heart { color: var(--accent); font-size: 15px; transition: color .2s; }
 @media (max-width: 640px) { .volunteer-btn { right: 14px; bottom: 14px; padding: 10px 15px; font-size: 13px; } }
+
+/* ---- line icons ---- */
+.ico { width: 1.15em; height: 1.15em; display: inline-block; vertical-align: -0.2em; flex: 0 0 auto; }
+.brand-mark { color: var(--bg); }
+.brand-mark .ico { width: 19px; height: 19px; vertical-align: 0; }
+.svc-ico .ico { width: 25px; height: 25px; }
+.preset-ico { display: inline-flex; align-items: center; }
+.preset-ico .ico { width: 18px; height: 18px; }
+.cat-chip .ico { width: 14px; height: 14px; }
+.task-tag .ico { width: 13px; height: 13px; vertical-align: -0.15em; }
+.vb-heart { display: inline-flex; align-items: center; }
+.vb-heart .ico { width: 15px; height: 15px; vertical-align: 0; }
+.role-chip .ico, .team-chip .ico { vertical-align: -0.16em; }

@@ -7,13 +7,13 @@
    ============================================================ */
 
 const SERVICES = [
-  { key: "cleaning", href: "cleaning.html", icon: "🧹", title: "Cleaning",
+  { key: "cleaning", href: "cleaning.html", icon: "broom", title: "Cleaning",
     blurb: "Post rooms, bid, underbid to win, then split the pay with helpers.", live: true },
-  { key: "requests", href: "requests.html", icon: "🫖", title: "Requests & favors",
+  { key: "requests", href: "requests.html", icon: "cup", title: "Requests & favors",
     blurb: "A cup of tea, a quick errand, grab-me-something — with an optional tip.", live: true },
-  { key: "resources", href: "resources.html", icon: "📦", title: "Resources",
+  { key: "resources", href: "resources.html", icon: "box", title: "Resources",
     blurb: "Out of coffee? Need a cable? Request supplies and gear here.", live: true },
-  { key: "projects", href: "projects.html", icon: "🚀", title: "Projects",
+  { key: "projects", href: "projects.html", icon: "rocket", title: "Projects",
     blurb: "Post a project, define the roles you need, and see who's in.", live: true },
 ];
 
@@ -28,7 +28,7 @@ let hubProjects = [];
 function renderServices() {
   servicesEl.innerHTML = SERVICES.map((s) => {
     const inner = `
-      <div class="svc-ico">${s.icon}</div>
+      <div class="svc-ico">${icon(s.icon)}</div>
       <div class="svc-body">
         <div class="svc-title">${esc(s.title)}${s.live ? "" : `<span class="soon-pill">soon</span>`}</div>
         <div class="svc-blurb">${esc(s.blurb)}</div>

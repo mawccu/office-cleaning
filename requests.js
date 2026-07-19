@@ -10,9 +10,9 @@
    ============================================================ */
 
 const FAV_CATS = [
-  { id: "tea",    icon: "🫖", label: "Tea / coffee" },
-  { id: "errand", icon: "🏃", label: "Errand" },
-  { id: "other",  icon: "✋", label: "Something else" },
+  { id: "tea",    icon: "cup", label: "Tea / coffee" },
+  { id: "errand", icon: "bag", label: "Errand" },
+  { id: "other",  icon: "dots", label: "Something else" },
 ];
 function catMeta(id) { return FAV_CATS.find((c) => c.id === id) || FAV_CATS[2]; }
 
@@ -37,7 +37,7 @@ function rewardPill(f) {
     ? `<span class="reward-pill">${fmtMoney(f.reward)}</span>`
     : `<span class="favor-pill">Free favor</span>`;
 }
-function catChip(id) { const c = catMeta(id); return `<span class="cat-chip">${c.icon} ${esc(c.label)}</span>`; }
+function catChip(id) { const c = catMeta(id); return `<span class="cat-chip">${icon(c.icon)} ${esc(c.label)}</span>`; }
 
 /* ============================================================
    Composer — post a request
@@ -52,7 +52,7 @@ function renderComposer() {
     document.getElementById("composerSignIn").addEventListener("click", () => openAuth());
     return;
   }
-  const cats = FAV_CATS.map((c) => `<button type="button" class="cat-btn ${favCat === c.id ? "on" : ""}" data-cat="${c.id}"><span>${c.icon}</span>${esc(c.label)}</button>`).join("");
+  const cats = FAV_CATS.map((c) => `<button type="button" class="cat-btn ${favCat === c.id ? "on" : ""}" data-cat="${c.id}">${icon(c.icon)}${esc(c.label)}</button>`).join("");
   composerEl.innerHTML = `
     <div class="card-head"><span>Post a request</span><span class="hint">as ${esc(auth.name)}</span></div>
     <div class="card-body">

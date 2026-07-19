@@ -63,7 +63,7 @@ function selectedAreas() {
 function roomsLabel(rooms) { return (rooms || []).map((x) => roomName(x.office, x.room)).join(", "); }
 function taskById(id) { return TASKS.find((t) => t.id === id); }
 function tasksTagsHtml(tasks) {
-  return (tasks || []).map((id) => { const t = taskById(id); return `<span class="task-tag">${t ? t.icon + " " + esc(t.label) : esc(id)}</span>`; }).join("");
+  return (tasks || []).map((id) => { const t = taskById(id); return `<span class="task-tag">${t ? icon(t.icon) + " " + esc(t.label) : esc(id)}</span>`; }).join("");
 }
 function openBidsCoveringRoom(officeId, roomId) {
   return bids.filter((b) => b.status === "open" && (b.rooms || []).some((x) => x.office === officeId && x.room === roomId));
@@ -406,7 +406,7 @@ function renderComposer() {
     return;
   }
   const chips = areas.map((a) => `<button class="area-chip" data-key="${a.officeId}:${a.roomId}" title="Remove"><span class="ac-name">${esc(roomName(a.officeId, a.roomId))}</span><span class="ac-x">×</span></button>`).join("");
-  const taskBtns = TASKS.map((t) => `<button type="button" class="task-chip ${selectedTasks.has(t.id) ? "on" : ""}" data-task="${t.id}"><span>${t.icon}</span>${esc(t.label)}</button>`).join("");
+  const taskBtns = TASKS.map((t) => `<button type="button" class="task-chip ${selectedTasks.has(t.id) ? "on" : ""}" data-task="${t.id}">${icon(t.icon)}${esc(t.label)}</button>`).join("");
   composerEl.innerHTML = `
     <div class="card-head"><span>Your bid</span><span class="hint">as ${esc(auth.name)}</span></div>
     <div class="card-body">
@@ -452,7 +452,7 @@ function renderPresets() {
   presetsEl.innerHTML = `
     <div class="card-head"><span>Quick bids</span></div>
     <div class="preset-list">
-      ${PRESETS.map((p) => `<button class="preset-btn" data-preset="${p.id}"><span class="preset-ico">${p.icon}</span><span class="preset-label">${esc(p.label)}</span></button>`).join("")}
+      ${PRESETS.map((p) => `<button class="preset-btn" data-preset="${p.id}"><span class="preset-ico">${icon(p.icon)}</span><span class="preset-label">${esc(p.label)}</span></button>`).join("")}
     </div>
     <div class="preset-foot">Sets up the rooms and tasks — then just name your amount.</div>`;
   presetsEl.querySelectorAll("[data-preset]").forEach((el) =>
