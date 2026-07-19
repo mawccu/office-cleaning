@@ -856,3 +856,25 @@ main {
 .svc-blurb { margin-top: 6px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
 .svc-live { margin-top: 10px; font-size: 12.5px; color: var(--gold); font-weight: 600; min-height: 16px; }
 .svc-go { font-size: 13px; font-weight: 600; color: var(--gold); }
+
+/* ---- requests / favors ---- */
+.composer.narrow { max-width: 640px; }
+.cat-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.cat-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(0, 0, 0, 0.22); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 12px;
+  font-family: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.cat-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.cat-btn.on { color: #1c1305; background: linear-gradient(135deg, var(--gold), var(--gold-2)); border-color: transparent; font-weight: 600; }
+/* the title field sits on its own row in the requests composer */
+.composer .card-body > .fld:not(.note):not(.amt-wide) { width: 100%; margin-bottom: 12px; }
+
+.favor-title { font-family: "Space Grotesk", sans-serif; font-weight: 600; font-size: 16px; margin: 12px 0 8px; line-height: 1.3; }
+.favor-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 4px; }
+.favor-ago { font-size: 12px; color: var(--muted-2); }
+.cat-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+.reward-pill { font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 15px; color: var(--gold); white-space: nowrap; }
+.favor-pill { font-size: 11.5px; font-weight: 600; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }

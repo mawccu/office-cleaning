@@ -60,7 +60,7 @@ function toast(msg) {
 const NAV = [
   { key: "hub",      label: "Hub",       href: "index.html" },
   { key: "cleaning", label: "Cleaning",  href: "cleaning.html" },
-  { key: "requests", label: "Requests",  href: "requests.html", soon: true },
+  { key: "requests", label: "Requests",  href: "requests.html" },
   { key: "projects", label: "Projects",  href: "projects.html", soon: true },
 ];
 function renderNav(active) {
