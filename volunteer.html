@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THE OFFICE — our spot. let's keep it alive.</title>
+  <meta name="description" content="Our place. 8 desks, a kitchen, a couch, a TV. The guy who paid for it is leaving — so let's all pitch in and keep the journey going." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="landing.css?v=15" />
+</head>
+<body>
+  <!-- NAV -->
+  <header class="nav">
+    <a href="#top" class="nav__brand">the&nbsp;office<span class="dot">.</span></a>
+    <nav class="nav__links" aria-label="Primary">
+      <a href="#about">about,</a>
+      <a href="#space">the space,</a>
+      <a href="#split">the split,</a>
+      <a href="#join">join</a>
+    </nav>
+    <a href="index.html" class="nav__cta">open the app &rarr;</a>
+  </header>
+
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero">
+      <p class="hero__eyebrow">[ our spot — by us, for us ]</p>
+      <h1 class="hero__title">
+        <span>Let's keep</span>
+        <span class="hero__title--accent">it&nbsp;alive.</span>
+      </h1>
+      <p class="hero__lede">
+        You know the place. 8 desks, the kitchen, the couch, the TV — the spot
+        where we actually get stuff done. The homie who's been covering the rent
+        is moving on. So instead of letting it go, let's all chip in a little and
+        keep the journey going. Same desk, same crew, split the bill.
+      </p>
+      <div class="hero__actions">
+        <a href="#join" class="btn btn--solid">I'm in &rarr;</a>
+        <a href="#split" class="btn btn--ghost">See my share</a>
+      </div>
+      <div class="hero__meta">
+        <div><span class="num" data-count="8">0</span><span class="lbl">desks</span></div>
+        <div><span class="num" data-count="1">0</span><span class="lbl">spot</span></div>
+        <div><span class="num" data-count="0">0</span><span class="lbl">reasons to quit</span></div>
+      </div>
+    </section>
+
+    <!-- MARQUEE -->
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee__track">
+        <span>focus —</span><span>community —</span><span>your own desk —</span>
+        <span>good coffee —</span><span>quiet hours —</span><span>lock in —</span>
+        <span>focus —</span><span>community —</span><span>your own desk —</span>
+        <span>good coffee —</span><span>quiet hours —</span><span>lock in —</span>
+      </div>
+    </div>
+
+    <!-- ABOUT -->
+    <section class="section about" id="about">
+      <p class="section__index">01 / about</p>
+      <div class="about__grid">
+        <h2 class="about__head">
+          One homie carried the rent. Now he's out.
+          So we carry it together — or we lose the spot.
+        </h2>
+        <div class="about__body">
+          <p>
+            Real talk: this place only existed because one person fronted the money
+            every month. That was never gonna last forever, and now he's moving on.
+            Fair enough — but the spot is too good to let die.
+          </p>
+          <p>
+            The fix is simple. Everyone who uses it becomes part of it and throws in
+            their share. Split 8 ways it's barely anything each, and the place stays
+            <em>ours</em> — your desk, the kitchen, the couch, the late nights. Same
+            as always, just nobody carrying it alone.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SPACE -->
+    <section class="section space" id="space">
+      <p class="section__index">02 / the space</p>
+      <h2 class="space__head">You already know it.</h2>
+      <div class="space__cards">
+        <article class="spacecard spacecard--lg">
+          <span class="spacecard__tag">your desk</span>
+          <h3>Your own desk</h3>
+          <p>One of 8. Same spot every time, your setup, your mess. Walk in and it's yours.</p>
+        </article>
+        <article class="spacecard">
+          <span class="spacecard__tag">the kitchen</span>
+          <h3>The kitchen</h3>
+          <p>Coffee runs, late-night noodles, somebody's leftovers. You know how it goes.</p>
+        </article>
+        <article class="spacecard">
+          <span class="spacecard__tag">the couch + TV</span>
+          <h3>Crash + chill area</h3>
+          <p>The couch and the TV for when the brain's fried and you just need 20 minutes.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="section features" id="features">
+      <p class="section__index">03 / features</p>
+      <h2 class="features__head">What you're keeping.</h2>
+      <ul class="features__list">
+        <li class="feature"><span class="feature__no">01</span><h3>Your desk</h3><p>One of 8, and it stays yours. No fighting for a spot.</p></li>
+        <li class="feature"><span class="feature__no">02</span><h3>The kitchen</h3><p>Coffee, food, the fridge. Fuel without leaving the building.</p></li>
+        <li class="feature"><span class="feature__no">03</span><h3>Sleeping area</h3><p>For the naps and the nights you don't feel like going home.</p></li>
+        <li class="feature"><span class="feature__no">04</span><h3>TV &amp; chill corner</h3><p>The couch, the screen, the break. You earned it.</p></li>
+        <li class="feature"><span class="feature__no">05</span><h3>The crew</h3><p>The whole point. People you actually want to be around.</p></li>
+        <li class="feature"><span class="feature__no">06</span><h3>Your own key</h3><p>Come and go whenever. The spot's open when you need it.</p></li>
+      </ul>
+    </section>
+
+    <!-- SPLIT CALCULATOR -->
+    <section class="section split" id="split">
+      <p class="section__index">04 / the split</p>
+      <h2 class="split__head">Here's what it actually costs you.</h2>
+      <p class="split__sub">Type in the monthly rent and how many of us are in. The more homies, the cheaper for everyone.</p>
+      <div class="split__grid">
+        <div class="split__inputs">
+          <div class="field">
+            <label for="rent">Monthly rent (total)</label>
+            <div class="inputwrap"><span class="inputwrap__sign" id="curSign">JD</span>
+              <input id="rent" type="number" min="0" step="10" value="800" inputmode="numeric" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="people">How many of us are in: <strong id="peopleVal">8</strong></label>
+            <input id="people" type="range" min="2" max="8" step="1" value="8" class="slider" />
+          </div>
+        </div>
+        <div class="split__result">
+          <span class="split__result-lbl">your share / month</span>
+          <span class="split__result-num" id="shareOut">JD 100</span>
+          <span class="split__result-foot" id="shareFoot">the whole spot for less than a phone bill each.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- JOIN -->
+    <section class="section join" id="join">
+      <p class="section__index">05 / i'm in</p>
+      <div class="join__grid">
+        <div class="join__copy">
+          <h2 class="join__head">Put your name down.<br />Keep the spot alive.</h2>
+          <p>Drop your name and a PIN — that's your login for the whole app (cleaning, requests, projects). Everyone who's in goes up on the wall: that's the crew keeping this thing going.</p>
+          <form class="join__form" id="joinForm" novalidate>
+            <div class="field">
+              <label for="name">Your name</label>
+              <input id="name" name="name" type="text" autocomplete="name" placeholder="e.g. Malek" required />
+            </div>
+            <div class="field">
+              <label for="pin">Pick a PIN <span>(4+ digits)</span></label>
+              <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="you'll use this to sign in" />
+            </div>
+            <button type="submit" class="btn btn--solid btn--full">I'm in &rarr;</button>
+            <p class="join__note" id="joinNote" role="status"></p>
+          </form>
+        </div>
+        <aside class="join__wall" aria-live="polite">
+          <div class="join__wall-head">
+            <span>The crew</span>
+            <span id="memberCount">0 in</span>
+          </div>
+          <ul class="memberlist" id="memberList"></ul>
+        </aside>
+      </div>
+    </section>
+
+    <!-- CONTACT / CTA -->
+    <section class="section contact" id="contact">
+      <h2 class="contact__head">Don't let it die.</h2>
+      <p class="contact__sub">Questions, or just tell me you're in. Hit me up.</p>
+      <a href="https://wa.me/962792200586" class="contact__mail">message Malek &rarr;</a>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>the office &copy; 2026</span>
+    <span>our spot. kept alive by us.</span>
+    <a href="#top">back to top &uarr;</a>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase.js?v=15"></script>
+  <script src="landing.js?v=15"></script>
+</body>
+</html>

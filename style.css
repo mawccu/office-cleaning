@@ -916,3 +916,18 @@ main {
 }
 .chip-btn:hover { color: var(--text); }
 .chip-btn.on { color: #1c1305; background: linear-gradient(135deg, var(--gold), var(--gold-2)); }
+
+/* ---- Volunteer corner button (-> keep-it-alive page) ---- */
+.volunteer-btn {
+  position: fixed; right: 20px; bottom: 20px; z-index: 40;
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: "Space Grotesk", sans-serif; font-weight: 600; font-size: 14px;
+  color: #1c1305; text-decoration: none;
+  background: linear-gradient(135deg, var(--gold), var(--gold-2));
+  padding: 11px 18px; border-radius: 999px;
+  box-shadow: 0 10px 26px -8px rgba(246, 200, 96, 0.6);
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.volunteer-btn:hover { transform: translateY(-2px); box-shadow: 0 16px 34px -10px rgba(246, 200, 96, 0.7); }
+.vb-heart { color: var(--danger); font-size: 15px; }
+@media (max-width: 640px) { .volunteer-btn { right: 14px; bottom: 14px; padding: 10px 15px; font-size: 13px; } }

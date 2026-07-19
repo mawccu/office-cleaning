@@ -58,7 +58,7 @@ function toast(msg) {
    up everywhere. `soon: true` renders a disabled "soon" pill.
    ============================================================ */
 const NAV = [
-  { key: "hub",       label: "Hub",       href: "hub.html" },
+  { key: "hub",       label: "Hub",       href: "index.html" },
   { key: "cleaning",  label: "Cleaning",  href: "cleaning.html" },
   { key: "requests",  label: "Requests",  href: "requests.html" },
   { key: "resources", label: "Resources", href: "resources.html" },
@@ -71,6 +71,15 @@ function renderNav(active) {
     ? `<span class="navlink soon" title="Coming soon">${esc(n.label)}<span class="soon-pill">soon</span></span>`
     : `<a class="navlink${n.key === active ? " active" : ""}" href="${n.href}">${esc(n.label)}</a>`
   ).join("");
+  // "Volunteer" corner button -> the keep-it-alive page (once per page)
+  if (!document.getElementById("volunteerBtn")) {
+    const a = document.createElement("a");
+    a.id = "volunteerBtn";
+    a.className = "volunteer-btn";
+    a.href = "volunteer.html";
+    a.innerHTML = `<span class="vb-heart">♥</span> Volunteer`;
+    document.body.appendChild(a);
+  }
 }
 
 /* ============================================================
