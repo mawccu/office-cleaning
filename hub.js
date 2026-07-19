@@ -11,10 +11,10 @@ const SERVICES = [
     blurb: "Post rooms, bid, underbid to win, then split the pay with helpers.", live: true },
   { key: "requests", href: "requests.html", icon: "🫖", title: "Requests & favors",
     blurb: "A cup of tea, a quick errand, grab-me-something — with an optional tip.", live: true },
-  { key: "resources", icon: "📦", title: "Resources",
-    blurb: "Out of coffee? Need a cable? Request supplies and gear here." },
-  { key: "projects", icon: "🚀", title: "Projects",
-    blurb: "Post a project, define the roles you need, and see who's in." },
+  { key: "resources", href: "resources.html", icon: "📦", title: "Resources",
+    blurb: "Out of coffee? Need a cable? Request supplies and gear here.", live: true },
+  { key: "projects", href: "projects.html", icon: "🚀", title: "Projects",
+    blurb: "Post a project, define the roles you need, and see who's in.", live: true },
 ];
 
 const servicesEl = document.getElementById("services");
@@ -22,6 +22,8 @@ const activityStripEl = document.getElementById("activityStrip");
 
 let hubBids = [];
 let hubFavors = [];
+let hubResources = [];
+let hubProjects = [];
 
 function renderServices() {
   servicesEl.innerHTML = SERVICES.map((s) => {
@@ -56,11 +58,26 @@ function renderActivity() {
     ? `${favOpen.length} open · ${favProg.length} being handled`
     : "No requests right now";
 
+  const resOpen = hubResources.filter((r) => r.status === "open");
+  const resUrgent = resOpen.filter((r) => r.urgency === "urgent");
+  const liveRes = document.getElementById("live-resources");
+  if (liveRes) liveRes.textContent = resOpen.length
+    ? `${resOpen.length} needed${resUrgent.length ? ` · ${resUrgent.length} urgent` : ""}`
+    : "Nothing needed right now";
+
+  const projLive = hubProjects.filter((p) => p.status !== "done");
+  const liveProj = document.getElementById("live-projects");
+  if (liveProj) liveProj.textContent = projLive.length
+    ? `${projLive.length} live project${projLive.length === 1 ? "" : "s"}`
+    : "No projects yet";
+
   if (activityStripEl) {
     const bits = [];
     if (open.length) bits.push(`<b>${open.length}</b> room${open.length === 1 ? "" : "s"} up for grabs`);
     if (pot > 0) bits.push(`<b>${fmtMoney(pot)}</b> pledged`);
     if (favOpen.length) bits.push(`<b>${favOpen.length}</b> favor${favOpen.length === 1 ? "" : "s"} to give`);
+    if (resOpen.length) bits.push(`<b>${resOpen.length}</b> to grab`);
+    if (projLive.length) bits.push(`<b>${projLive.length}</b> project${projLive.length === 1 ? "" : "s"} live`);
     activityStripEl.innerHTML = bits.length
       ? `<span class="pulse"></span> ${bits.join(" · ")}`
       : `<span class="pulse"></span> All quiet — nothing needs doing right now`;
@@ -69,12 +86,16 @@ function renderActivity() {
 
 async function loadActivity() {
   try {
-    const [b, f] = await Promise.all([
+    const [b, f, r, p] = await Promise.all([
       sb.from("bids").select("status,amount").limit(300),
       sb.from("favors").select("status,reward").limit(300),
+      sb.from("resources").select("status,urgency").limit(300),
+      sb.from("projects").select("status").limit(300),
     ]);
     if (!b.error) hubBids = b.data || [];
     if (!f.error) hubFavors = f.data || [];
+    if (!r.error) hubResources = r.data || [];
+    if (!p.error) hubProjects = p.data || [];
   } catch (e) {
     // activity is best-effort; a hiccup shouldn't break the hub
   }

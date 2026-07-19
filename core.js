@@ -58,10 +58,11 @@ function toast(msg) {
    up everywhere. `soon: true` renders a disabled "soon" pill.
    ============================================================ */
 const NAV = [
-  { key: "hub",      label: "Hub",       href: "index.html" },
-  { key: "cleaning", label: "Cleaning",  href: "cleaning.html" },
-  { key: "requests", label: "Requests",  href: "requests.html" },
-  { key: "projects", label: "Projects",  href: "projects.html", soon: true },
+  { key: "hub",       label: "Hub",       href: "hub.html" },
+  { key: "cleaning",  label: "Cleaning",  href: "cleaning.html" },
+  { key: "requests",  label: "Requests",  href: "requests.html" },
+  { key: "resources", label: "Resources", href: "resources.html" },
+  { key: "projects",  label: "Projects",  href: "projects.html" },
 ];
 function renderNav(active) {
   const el = document.getElementById("mainnav");
