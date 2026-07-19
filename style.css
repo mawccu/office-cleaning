@@ -734,3 +734,53 @@ main {
   .bg-decor::before, .bg-decor::after { animation: none; }
   .plate polygon, .lb-bar span, .history-card, .btn, .toast { transition: none; }
 }
+
+/* ---- underbidding (lowest offer wins) ---- */
+.amt-was {
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  color: var(--muted-2); text-decoration: line-through;
+  margin-right: 7px; opacity: 0.85;
+}
+.bid-card.has-holder { border-color: rgba(246, 200, 96, 0.28); }
+.lead-line {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--muted);
+  background: rgba(246, 200, 96, 0.07);
+  border: 1px solid rgba(246, 200, 96, 0.16);
+  border-radius: var(--r-sm); padding: 7px 10px; margin: 0 0 12px;
+}
+.lead-line b { color: var(--text); font-weight: 600; }
+.lead-avatar {
+  width: 22px; height: 22px; flex: 0 0 auto; border-radius: 50%;
+  display: grid; place-items: center; font-size: 9px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, hsl(var(--h, 40) 68% 56%), hsl(var(--h, 40) 68% 40%));
+}
+.hint-inline { flex: 1; align-self: center; font-size: 12px; color: var(--muted); }
+
+/* ---- helpers / payment split ---- */
+.team-wrap { margin: 2px 0 12px; }
+.team-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.team-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 4px 10px;
+}
+.team-chip.claimer { border-color: rgba(246, 200, 96, 0.35); background: rgba(246, 200, 96, 0.1); }
+.team-chip.accepted { border-color: rgba(55, 214, 122, 0.32); background: rgba(55, 214, 122, 0.1); }
+.team-chip.pending { color: var(--muted); border-style: dashed; }
+.team-role { font-size: 10px; font-weight: 600; color: var(--muted-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.team-share { font-family: "Space Grotesk", sans-serif; font-weight: 700; color: var(--gold); }
+.team-x {
+  border: 0; background: none; color: var(--muted-2); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0 0 0 2px;
+}
+.team-x:hover { color: var(--danger); }
+.split-note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.split-note b { color: var(--gold); }
+.invite-banner {
+  font-size: 13px; color: var(--text);
+  background: rgba(55, 214, 122, 0.1); border: 1px solid rgba(55, 214, 122, 0.28);
+  border-radius: var(--r-sm); padding: 9px 12px; margin: 0 0 12px;
+}
+.invite-banner b { color: var(--good); }

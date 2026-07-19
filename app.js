@@ -21,6 +21,7 @@ const officeIds = Object.keys(offices);
 
 // ---- live data ----
 let bids = [];                    // full lifecycle rows
+let helpers = [];                 // helper invites/acceptances across all jobs
 const selectedKeys = new Set();   // "officeId:roomId" being composed into a bid
 const selectedTasks = new Set();  // task ids checked for the bid being composed
 let bidAmount = "";               // composer fields kept across re-renders
@@ -105,6 +106,20 @@ function initials(name) {
 }
 function hashHue(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; }
 function emptyBlock(msg) { return `<div class="empty-block">${esc(msg)}</div>`; }
+
+// ---- helpers / payment split ----
+function helpersFor(bidId) { return helpers.filter((h) => h.bid_id === bidId); }
+function acceptedHelpers(bidId) { return helpersFor(bidId).filter((h) => h.status === "accepted"); }
+function myInvite(bidId) { return auth ? helpersFor(bidId).find((h) => h.helper_name === auth.name) : null; }
+// The pot (b.amount) splits equally between the claimer and every accepted helper.
+function splitInfo(b) {
+  const accepted = acceptedHelpers(b.id).map((h) => h.helper_name);
+  const team = [b.claimed_by, ...accepted].filter(Boolean);
+  const n = Math.max(1, team.length);
+  return { team, accepted, count: n, share: Number(b.amount) / n };
+}
+// Is this open job undercut below its posted price?
+function isUndercut(b) { return Number(b.amount) < Number(b.posted_amount); }
 
 let toastTimer = null;
 function toast(msg) {
@@ -598,6 +613,24 @@ function onEditBid(bid) {
   if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
   callRpc("edit_bid", { p_bid_id: bid.id, p_amount: amount, p_due_at: bid.due_at, p_tasks: bid.tasks || [], p_note: bid.note ?? null }, "Bid updated");
 }
+// Undercut / first offer on an open job. The offer must be below the
+// current price (b.amount).
+function onOffer(bid) {
+  if (!requireAuth(() => onOffer(bid))) return;
+  const val = prompt(`Offer to clean ${roomsLabel(bid.rooms)} for less than ${fmtMoney(bid.amount)}.\nYour price (JD):`, "");
+  if (val == null) return;
+  const amount = Number(val);
+  if (!amount || amount <= 0) return toast("Enter an amount greater than 0");
+  if (amount >= Number(bid.amount)) return toast(`Offer must be under ${fmtMoney(bid.amount)}`);
+  callRpc("place_offer", { p_bid_id: bid.id, p_amount: amount }, `Offer placed: ${fmtMoney(amount)} — you're the lowest`);
+}
+function onInvite(bid) {
+  if (!requireAuth()) return;
+  const name = prompt(`Invite someone to help clean ${roomsLabel(bid.rooms)} and split the pay.\nTheir name (exactly as they sign in):`, "");
+  if (name == null) return;
+  if (!name.trim()) return toast("Enter a name");
+  callRpc("invite_helper", { p_bid_id: bid.id, p_helper: name.trim() }, `Invited ${name.trim()} — waiting for them to accept`);
+}
 function onSchedule(bid, localVal) {
   callRpc("schedule_bid", { p_bid_id: bid.id, p_scheduled_for: localToISO(localVal) }, "Time set");
 }
@@ -608,12 +641,18 @@ function wireBidActions() {
     const act = el.dataset.act;
     if (act === "schedule") { el.addEventListener("change", () => onSchedule(bid, el.value)); return; }
     el.addEventListener("click", () => {
-      if (act === "claim") callRpc("claim_bid", { p_bid_id: bid.id }, "You claimed it — go clean!");
+      if (act === "claim") callRpc("claim_bid", { p_bid_id: bid.id }, "You've got it — go clean!");
+      else if (act === "offer" || act === "undercut") onOffer(bid);
+      else if (act === "retract") callRpc("retract_offer", { p_bid_id: bid.id }, "Offer retracted");
       else if (act === "cancel") { if (confirm(`Cancel your bid on ${roomsLabel(bid.rooms)}?`)) callRpc("cancel_bid", { p_bid_id: bid.id }, "Bid canceled"); }
       else if (act === "edit") onEditBid(bid);
       else if (act === "unclaim") callRpc("unclaim_bid", { p_bid_id: bid.id }, "Un-claimed");
       else if (act === "cleaned") callRpc("mark_cleaned", { p_bid_id: bid.id }, "Marked cleaned — waiting on payment");
       else if (act === "paid") callRpc("mark_paid", { p_bid_id: bid.id }, "Marked paid — done!");
+      else if (act === "invite") onInvite(bid);
+      else if (act === "accept") callRpc("respond_invite", { p_bid_id: bid.id, p_accept: true }, "You're on the team");
+      else if (act === "decline") callRpc("respond_invite", { p_bid_id: bid.id, p_accept: false }, "Invite declined");
+      else if (act === "removehelper") callRpc("remove_helper", { p_bid_id: bid.id, p_helper: el.dataset.helper }, "Helper removed");
     });
   });
 }
@@ -625,33 +664,84 @@ function avatarHtml(name) { return `<div class="bid-avatar" style="--h:${hashHue
 
 function openCard(b) {
   const mine = auth && b.bidder_name === auth.name;
-  return `<div class="bid-card">
+  const holder = b.claimed_by;                       // lowest-offer leader, if any
+  const iAmHolder = auth && holder === auth.name;
+  const undercut = isUndercut(b);
+  const amtHtml = undercut
+    ? `<div class="bid-amt"><span class="amt-was">${fmtMoney(b.posted_amount)}</span>${fmtMoney(b.amount)}</div>`
+    : `<div class="bid-amt">${fmtMoney(b.amount)}</div>`;
+
+  let leadLine = "";
+  if (holder) {
+    leadLine = `<div class="lead-line">${avatarHtml(holder).replace("bid-avatar", "lead-avatar")}<span>Lowest offer: <b>${esc(holder)}</b> at ${fmtMoney(b.amount)}${iAmHolder ? " — that's you" : ""}</span></div>`;
+  }
+
+  // Action buttons depend on who you are and whether the job has an offer.
+  let actions;
+  if (mine) {
+    // The poster manages their own posting.
+    actions = holder
+      ? `<span class="hint-inline">${esc(holder)} leads at ${fmtMoney(b.amount)}</span><button class="btn danger small" data-act="cancel" data-bid="${b.id}">Cancel</button>`
+      : `<button class="btn ghost small" data-act="edit" data-bid="${b.id}">Edit</button><button class="btn danger small" data-act="cancel" data-bid="${b.id}">Cancel</button>`;
+  } else if (iAmHolder) {
+    // You hold the lowest offer: lock it in, or back out.
+    actions = `<button class="btn claim small" data-act="claim" data-bid="${b.id}">Start cleaning (${fmtMoney(b.amount)})</button><button class="btn ghost small" data-act="retract" data-bid="${b.id}">Retract offer</button>`;
+  } else if (holder) {
+    // Someone else leads: your only way in is to undercut them.
+    actions = `<button class="btn claim small" data-act="undercut" data-bid="${b.id}">Undercut (under ${fmtMoney(b.amount)})</button>`;
+  } else {
+    // No offers yet: take it at the posted price, or offer less.
+    actions = `<button class="btn claim small" data-act="claim" data-bid="${b.id}">Claim &amp; clean</button><button class="btn ghost small" data-act="offer" data-bid="${b.id}">Offer less</button>`;
+  }
+
+  return `<div class="bid-card${holder ? " has-holder" : ""}">
     <div class="bid-top">
       <div class="bid-who">${avatarHtml(b.bidder_name)}<div class="bid-name">${esc(b.bidder_name)}</div></div>
-      <div class="bid-amt">${fmtMoney(b.amount)}</div>
+      ${amtHtml}
     </div>
     <div class="bid-rooms">${esc(roomsLabel(b.rooms))}</div>
     ${b.tasks && b.tasks.length ? `<div class="task-tags">${tasksTagsHtml(b.tasks)}</div>` : ""}
     ${b.note ? `<div class="bid-note">“${esc(b.note)}”</div>` : ""}
+    ${leadLine}
     ${b.due_at ? `<div class="bid-meta">${duePill(b.due_at)}</div>` : ""}
-    <div class="bid-actions">
-      ${mine
-        ? `<button class="btn ghost small" data-act="edit" data-bid="${b.id}">Edit</button><button class="btn danger small" data-act="cancel" data-bid="${b.id}">Cancel</button>`
-        : `<button class="btn claim small" data-act="claim" data-bid="${b.id}">Claim &amp; clean</button>`}
-    </div>
+    <div class="bid-actions">${actions}</div>
   </div>`;
+}
+// The team + per-person share on a claimed/cleaned job.
+function teamHtml(b, editable) {
+  const { accepted, share } = splitInfo(b);
+  const invited = helpersFor(b.id).filter((h) => h.status === "invited").map((h) => h.helper_name);
+  const chip = (name, role, extra) =>
+    `<span class="team-chip ${role}">${esc(name)}<span class="team-role">${role === "claimer" ? "claimer" : role === "pending" ? "invited" : "helper"}</span>${extra || ""}</span>`;
+  const rm = (name) => editable ? `<button class="team-x" data-act="removehelper" data-bid="${b.id}" data-helper="${esc(name)}" title="Remove">×</button>` : "";
+  const chips = [
+    chip(b.claimed_by, "claimer", `<span class="team-share">${fmtMoney(share)}</span>`),
+    ...accepted.map((n) => chip(n, "accepted", `<span class="team-share">${fmtMoney(share)}</span>` + rm(n))),
+    ...invited.map((n) => chip(n, "pending", rm(n))),
+  ].join("");
+  const splitNote = accepted.length
+    ? `<div class="split-note">Split ${fmtMoney(b.amount)} ${splitInfo(b).count} ways · <b>${fmtMoney(share)} each</b></div>`
+    : "";
+  return `<div class="team-wrap"><div class="team-chips">${chips}</div>${splitNote}</div>`;
 }
 function progressCard(b) {
   const cleaned = b.status === "cleaned";
   const iAmClaimer = auth && b.claimed_by === auth.name;
   const iAmBidder = auth && b.bidder_name === auth.name;
+  const invite = myInvite(b.id);
+  const iAmInvited = invite && invite.status === "invited";
+  const iAmHelper = invite && invite.status === "accepted";
+  const undercut = isUndercut(b);
+  const amtHtml = undercut
+    ? `<div class="bid-amt"><span class="amt-was">${fmtMoney(b.posted_amount)}</span>${fmtMoney(b.amount)}</div>`
+    : `<div class="bid-amt">${fmtMoney(b.amount)}</div>`;
   const schedInput = iAmClaimer && !cleaned
     ? `<label class="sched-row">When you'll do it<input type="datetime-local" class="fld dt" data-act="schedule" data-bid="${b.id}" value="${b.scheduled_for ? toLocalInput(b.scheduled_for) : ""}" /></label>`
     : (b.scheduled_for ? `<div class="bid-subline">Planned for ${esc(fmtDate(b.scheduled_for))}</div>` : "");
   return `<div class="bid-card">
     <div class="bid-top">
       <div class="bid-who">${avatarHtml(b.claimed_by || b.bidder_name)}<div><div class="bid-name">${esc(roomsLabel(b.rooms))}</div><div class="bid-subline">bid by ${esc(b.bidder_name)} · claimed by ${esc(b.claimed_by)}</div></div></div>
-      <div class="bid-amt">${fmtMoney(b.amount)}</div>
+      ${amtHtml}
     </div>
     <div class="bid-meta">
       <span class="status-badge ${cleaned ? "cleaned" : "claimed"}">${cleaned ? "Cleaned · awaiting payment" : "In progress"}</span>
@@ -659,17 +749,26 @@ function progressCard(b) {
     </div>
     ${b.tasks && b.tasks.length ? `<div class="task-tags">${tasksTagsHtml(b.tasks)}</div>` : ""}
     ${b.note ? `<div class="bid-note">“${esc(b.note)}”</div>` : ""}
+    ${(b.claimed_by && (splitInfo(b).accepted.length || helpersFor(b.id).length)) ? teamHtml(b, iAmClaimer && !cleaned) : ""}
     ${schedInput}
+    ${iAmInvited ? `<div class="invite-banner">You're invited to help — you'd get <b>${fmtMoney(Number(b.amount) / (splitInfo(b).count + 1))}</b>.</div>` : ""}
     <div class="bid-actions">
+      ${iAmClaimer && !cleaned ? `<button class="btn ghost small" data-act="invite" data-bid="${b.id}">Invite helper</button>` : ""}
       ${iAmClaimer && !cleaned ? `<button class="btn claim small" data-act="cleaned" data-bid="${b.id}">Mark cleaned</button><button class="btn ghost small" data-act="unclaim" data-bid="${b.id}">Un-claim</button>` : ""}
+      ${iAmInvited ? `<button class="btn primary small" data-act="accept" data-bid="${b.id}">Accept</button><button class="btn ghost small" data-act="decline" data-bid="${b.id}">Decline</button>` : ""}
+      ${iAmHelper && !cleaned ? `<button class="btn ghost small" data-act="removehelper" data-bid="${b.id}" data-helper="${esc(auth.name)}">Leave</button>` : ""}
       ${cleaned && iAmBidder ? `<button class="btn primary small" data-act="paid" data-bid="${b.id}">Mark paid</button>` : ""}
     </div>
   </div>`;
 }
 function historyCard(b) {
+  const acc = acceptedHelpers(b.id).map((h) => h.helper_name);
+  const teamLine = acc.length
+    ? ` +${acc.length} · ${fmtMoney(Number(b.amount) / (acc.length + 1))} each`
+    : "";
   return `<div class="history-card">
     <div class="history-top"><div class="history-area">${esc(roomsLabel(b.rooms))}</div><div class="history-amt">${fmtMoney(b.amount)}</div></div>
-    <div class="history-sub">bid by <b>${esc(b.bidder_name)}</b> · cleaned by <b>${esc(b.claimed_by)}</b> · paid</div>
+    <div class="history-sub">bid by <b>${esc(b.bidder_name)}</b> · cleaned by <b>${esc(b.claimed_by)}${esc(teamLine)}</b> · paid</div>
     <div class="history-contribs">${esc(fmtDate(b.paid_at || b.created_at))}</div>
   </div>`;
 }
@@ -730,16 +829,24 @@ function render() {
 }
 async function reload() {
   try {
-    const { data, error } = await sb.from("bids").select("*").order("created_at", { ascending: false }).limit(300);
-    if (error) throw error;
-    bids = data || [];
+    const [bidsRes, helpersRes] = await Promise.all([
+      sb.from("bids").select("*").order("created_at", { ascending: false }).limit(300),
+      sb.from("helpers").select("*").limit(1000),
+    ]);
+    if (bidsRes.error) throw bidsRes.error;
+    if (helpersRes.error) throw helpersRes.error;
+    bids = bidsRes.data || [];
+    helpers = helpersRes.data || [];
   } catch (e) {
     toast("Connection issue: " + (e.message || e));
   }
   render();
 }
 function subscribeRealtime() {
-  sb.channel("board").on("postgres_changes", { event: "*", schema: "public", table: "bids" }, reload).subscribe();
+  sb.channel("board")
+    .on("postgres_changes", { event: "*", schema: "public", table: "bids" }, reload)
+    .on("postgres_changes", { event: "*", schema: "public", table: "helpers" }, reload)
+    .subscribe();
 }
 function updateWhoami() {
   if (auth) {

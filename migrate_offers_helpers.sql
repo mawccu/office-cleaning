@@ -1,58 +1,26 @@
 -- ============================================================
---  Cleaning Bids — full schema
---  identity (name + PIN) + bundled bids + lifecycle
---  (open -> claimed -> cleaned -> paid) + deadlines + tasks + note
---  + underbidding (lowest offer wins) + helpers (equal split).
+--  MIGRATION: add underbidding (lowest offer wins) + helpers
+--  (equal split) to a LIVE Cleaning Bids board.
 --
---  Run this whole file once in the Supabase SQL Editor.
---  It DROPS and recreates the tables (clears all existing data).
---  To add the underbid/helpers features to a LIVE board WITHOUT
---  losing data, run migrate_offers_helpers.sql instead.
+--  Safe to run on a database that already has data — it does NOT
+--  drop any tables. Run this whole file once in the Supabase SQL
+--  Editor. Running it twice is harmless (idempotent).
 -- ============================================================
 
-drop table if exists public.helpers cascade;
-drop table if exists public.offers  cascade;
-drop table if exists public.bids    cascade;
-drop table if exists public.claims  cascade;
-drop table if exists public.users   cascade;
+-- 1) New column: remember each posting's original (ceiling) price.
+alter table public.bids add column if not exists posted_amount numeric;
+update public.bids set posted_amount = amount where posted_amount is null;
+alter table public.bids alter column posted_amount set not null;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'bids_posted_amount_check') then
+    alter table public.bids add constraint bids_posted_amount_check check (posted_amount > 0);
+  end if;
+end
+$$;
 
--- Identity: a name + a PIN. Never exposed to the client (no anon select);
--- only the security-definer functions below can read it.
-create table public.users (
-  name       text primary key,
-  pin        text not null,
-  created_at timestamptz not null default now()
-);
-
--- One bid = one posting that moves through a lifecycle.
---   posted_amount = the price the poster first offered (the ceiling).
---   amount        = the current effective price. It starts equal to
---                   posted_amount and drops as cleaners underbid, so it
---                   is always what will actually be paid.
---   claimed_by    = while 'open', the cleaner holding the lowest offer;
---                   once 'claimed', the cleaner locked in to do the work.
-create table public.bids (
-  id            uuid primary key default gen_random_uuid(),
-  bidder_name   text not null,
-  amount        numeric not null check (amount > 0),
-  posted_amount numeric not null check (posted_amount > 0),
-  rooms         jsonb not null,
-  tasks         jsonb not null default '[]'::jsonb,
-  note          text,
-  status        text not null default 'open' check (status in ('open','claimed','cleaned','paid')),
-  due_at        timestamptz,
-  claimed_by    text,
-  scheduled_for timestamptz,
-  cleaned_at    timestamptz,
-  paid_at       timestamptz,
-  created_at    timestamptz not null default now()
-);
-
--- Underbid offers. One row per (bid, cleaner); a cleaner may lower their
--- own offer. Server-internal only: no anon policy, so the client never
--- reads it. The current leader is always mirrored onto bids.claimed_by /
--- bids.amount, which is what the board displays.
-create table public.offers (
+-- 2) Offers (server-internal) + helpers (world-readable).
+create table if not exists public.offers (
   id           uuid primary key default gen_random_uuid(),
   bid_id       uuid not null references public.bids(id) on delete cascade,
   cleaner_name text not null,
@@ -61,10 +29,7 @@ create table public.offers (
   unique (bid_id, cleaner_name)
 );
 
--- Helpers the claimer invites onto a job. The payment splits equally
--- among the claimer + every helper with status 'accepted'. A declined
--- invite is just a deleted row.
-create table public.helpers (
+create table if not exists public.helpers (
   id          uuid primary key default gen_random_uuid(),
   bid_id      uuid not null references public.bids(id) on delete cascade,
   helper_name text not null,
@@ -74,36 +39,7 @@ create table public.helpers (
   unique (bid_id, helper_name)
 );
 
--- Register a new name (with its PIN) or verify an existing one.
-create or replace function public.auth_user(p_name text, p_pin text)
-returns void
-language plpgsql security definer set search_path = public as $$
-begin
-  p_name := btrim(p_name);
-  if length(p_name) = 0 then raise exception 'Name required'; end if;
-  if length(p_pin) < 4 then raise exception 'PIN must be at least 4 digits'; end if;
-  insert into public.users(name, pin) values (p_name, p_pin) on conflict (name) do nothing;
-  if not exists (select 1 from public.users where name = p_name and pin = p_pin) then
-    raise exception 'That name is already taken with a different PIN';
-  end if;
-end;
-$$;
-
--- Internal: verify name+pin, return the trimmed name (or raise).
-create or replace function public._require(p_name text, p_pin text)
-returns text
-language plpgsql security definer set search_path = public as $$
-begin
-  p_name := btrim(p_name);
-  if not exists (select 1 from public.users where name = p_name and pin = p_pin) then
-    raise exception 'Wrong name or PIN';
-  end if;
-  return p_name;
-end;
-$$;
-
--- Internal: recompute the leading (lowest) offer for a bid and mirror it
--- onto the bids row. With no offers left, revert to the posted price.
+-- 3) Leader helper + all new/updated functions.
 create or replace function public._sync_leader(p_bid_id uuid)
 returns public.bids
 language plpgsql security definer set search_path = public as $$
@@ -113,12 +49,10 @@ begin
     from public.offers where bid_id = p_bid_id
     order by amount asc, created_at asc limit 1;
   if v_name is null then
-    update public.bids b
-      set claimed_by = null, amount = b.posted_amount
+    update public.bids b set claimed_by = null, amount = b.posted_amount
       where id = p_bid_id returning * into v_bid;
   else
-    update public.bids
-      set claimed_by = v_name, amount = v_amt
+    update public.bids set claimed_by = v_name, amount = v_amt
       where id = p_bid_id returning * into v_bid;
   end if;
   return v_bid;
@@ -163,22 +97,6 @@ begin
 end;
 $$;
 
-create or replace function public.cancel_bid(p_name text, p_pin text, p_bid_id uuid)
-returns void
-language plpgsql security definer set search_path = public as $$
-declare v_name text; v_bid public.bids;
-begin
-  v_name := public._require(p_name, p_pin);
-  select * into v_bid from public.bids where id = p_bid_id;
-  if not found then raise exception 'Bid not found'; end if;
-  if v_bid.bidder_name <> v_name then raise exception 'Only the bidder can cancel this'; end if;
-  if v_bid.status <> 'open' then raise exception 'Bid already claimed'; end if;
-  delete from public.bids where id = p_bid_id;  -- offers cascade away
-end;
-$$;
-
--- Underbid: place (or lower) an offer on an open job. Must strictly beat
--- the current price. Recomputes the leader onto the bids row.
 create or replace function public.place_offer(p_name text, p_pin text, p_bid_id uuid, p_amount numeric)
 returns public.bids
 language plpgsql security definer set search_path = public as $$
@@ -200,7 +118,6 @@ begin
 end;
 $$;
 
--- Withdraw your own offer from an open job; the next-lowest offer leads.
 create or replace function public.retract_offer(p_name text, p_pin text, p_bid_id uuid)
 returns public.bids
 language plpgsql security definer set search_path = public as $$
@@ -216,9 +133,6 @@ begin
 end;
 $$;
 
--- Lock the job in and start. If cleaners have offered, only the current
--- leader may claim, at their winning price. Otherwise anyone claims at the
--- posted price. Either way the auction closes.
 create or replace function public.claim_bid(p_name text, p_pin text, p_bid_id uuid)
 returns public.bids
 language plpgsql security definer set search_path = public as $$
@@ -243,21 +157,6 @@ begin
 end;
 $$;
 
-create or replace function public.schedule_bid(p_name text, p_pin text, p_bid_id uuid, p_scheduled_for timestamptz)
-returns public.bids
-language plpgsql security definer set search_path = public as $$
-declare v_name text; v_bid public.bids;
-begin
-  v_name := public._require(p_name, p_pin);
-  select * into v_bid from public.bids where id = p_bid_id;
-  if not found then raise exception 'Bid not found'; end if;
-  if v_bid.claimed_by <> v_name then raise exception 'Only the claimer can set the time'; end if;
-  if v_bid.status <> 'claimed' then raise exception 'Not in progress'; end if;
-  update public.bids set scheduled_for = p_scheduled_for where id = p_bid_id returning * into v_bid;
-  return v_bid;
-end;
-$$;
-
 create or replace function public.unclaim_bid(p_name text, p_pin text, p_bid_id uuid)
 returns public.bids
 language plpgsql security definer set search_path = public as $$
@@ -276,37 +175,6 @@ begin
 end;
 $$;
 
-create or replace function public.mark_cleaned(p_name text, p_pin text, p_bid_id uuid)
-returns public.bids
-language plpgsql security definer set search_path = public as $$
-declare v_name text; v_bid public.bids;
-begin
-  v_name := public._require(p_name, p_pin);
-  select * into v_bid from public.bids where id = p_bid_id;
-  if not found then raise exception 'Bid not found'; end if;
-  if v_bid.claimed_by <> v_name then raise exception 'Only the claimer can mark it cleaned'; end if;
-  if v_bid.status <> 'claimed' then raise exception 'Not in progress'; end if;
-  update public.bids set status = 'cleaned', cleaned_at = now() where id = p_bid_id returning * into v_bid;
-  return v_bid;
-end;
-$$;
-
-create or replace function public.mark_paid(p_name text, p_pin text, p_bid_id uuid)
-returns public.bids
-language plpgsql security definer set search_path = public as $$
-declare v_name text; v_bid public.bids;
-begin
-  v_name := public._require(p_name, p_pin);
-  select * into v_bid from public.bids where id = p_bid_id;
-  if not found then raise exception 'Bid not found'; end if;
-  if v_bid.bidder_name <> v_name then raise exception 'Only the bidder can mark it paid'; end if;
-  if v_bid.status <> 'cleaned' then raise exception 'Not cleaned yet'; end if;
-  update public.bids set status = 'paid', paid_at = now() where id = p_bid_id returning * into v_bid;
-  return v_bid;
-end;
-$$;
-
--- The claimer invites a helper by name onto an active job.
 create or replace function public.invite_helper(p_name text, p_pin text, p_bid_id uuid, p_helper text)
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -327,7 +195,6 @@ begin
 end;
 $$;
 
--- An invited helper accepts (true) or declines (false) their invite.
 create or replace function public.respond_invite(p_name text, p_pin text, p_bid_id uuid, p_accept boolean)
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -345,7 +212,6 @@ begin
 end;
 $$;
 
--- The claimer removes a helper, or a helper removes themselves.
 create or replace function public.remove_helper(p_name text, p_pin text, p_bid_id uuid, p_helper text)
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -362,42 +228,24 @@ begin
 end;
 $$;
 
--- Row-Level Security: bids + helpers are world-readable; every write goes
--- through the PIN-checked functions above. offers/users stay hidden.
-alter table public.bids    enable row level security;
+-- 4) RLS: helpers world-readable, offers hidden.
 alter table public.offers  enable row level security;
 alter table public.helpers enable row level security;
-alter table public.users   enable row level security;
-drop policy if exists "anon read bids"    on public.bids;
 drop policy if exists "anon read helpers" on public.helpers;
-create policy "anon read bids"    on public.bids    for select to anon using (true);
 create policy "anon read helpers" on public.helpers for select to anon using (true);
--- offers + users have NO policies on purpose: unreadable/unwritable except
--- via the security-definer functions.
 
+-- 5) Grants for the new functions.
 grant execute on function
-  public.auth_user(text,text),
-  public.place_bid(text,text,numeric,jsonb,timestamptz,jsonb,text),
-  public.edit_bid(text,text,uuid,numeric,timestamptz,jsonb,text),
-  public.cancel_bid(text,text,uuid),
   public.place_offer(text,text,uuid,numeric),
   public.retract_offer(text,text,uuid),
-  public.claim_bid(text,text,uuid),
-  public.schedule_bid(text,text,uuid,timestamptz),
-  public.unclaim_bid(text,text,uuid),
-  public.mark_cleaned(text,text,uuid),
-  public.mark_paid(text,text,uuid),
   public.invite_helper(text,text,uuid,text),
   public.respond_invite(text,text,uuid,boolean),
   public.remove_helper(text,text,uuid,text)
   to anon;
 
--- Realtime so every device updates live.
+-- 6) Realtime for the helpers table.
 do $$
 begin
-  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'bids') then
-    alter publication supabase_realtime add table public.bids;
-  end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'helpers') then
     alter publication supabase_realtime add table public.helpers;
   end if;
