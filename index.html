@@ -3,73 +3,33 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Cleaning Bids</title>
+<title>The Office</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
 <!-- ?v= busts the browser/Pages cache — bump it whenever js/css change -->
-<link rel="stylesheet" href="style.css?v=13" />
+<link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
 <div class="bg-decor" aria-hidden="true"></div>
 
 <header class="top">
-  <div class="brand">
-    <span class="brand-mark">🧹</span>
-    <span class="brand-name">Cleaning<span>Bids</span></span>
-  </div>
-  <div class="top-stats">
-    <div class="stat">
-      <span class="stat-label">Total pledged</span>
-      <span class="stat-val" id="statTotal">0 JD</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">Rooms live</span>
-      <span class="stat-val" id="statAreas">0</span>
-    </div>
-  </div>
+  <a class="brand" href="index.html">
+    <span class="brand-mark">🏢</span>
+    <span class="brand-name">The<span>Office</span></span>
+  </a>
+  <nav class="mainnav" id="mainnav"></nav>
   <div class="whoami" id="whoami"></div>
 </header>
 
 <main>
-  <section class="intro reveal">
-    <h1 class="display">Bid on the rooms.<br />Claim to clean.</h1>
-    <p class="lede">Pick rooms — or a whole office — and put one price on the lot. Anyone can claim a bid, clean those rooms, and collect it.</p>
+  <section class="hub-hero reveal">
+    <h1 class="display">Everything the team runs on.</h1>
+    <p class="lede">One place for the small stuff and the big stuff — get a room cleaned, ask for a tea, request supplies, or spin up a project and see who's in. For office members, not clients.</p>
+    <div class="activity-strip" id="activityStrip"></div>
   </section>
 
-  <div class="board-grid">
-    <aside class="col-left">
-      <section class="card presets reveal" id="presets"></section>
-    </aside>
-
-    <div class="col-main">
-      <section class="card floor-card reveal">
-        <div class="card-head"><span>Floor plan</span><span class="hint" id="selHint">Tap areas to select</span></div>
-        <div class="floorplan-wrap" id="floorPlanWrap"></div>
-      </section>
-
-      <section class="card composer reveal" id="composer"></section>
-    </div>
-
-    <aside class="col-side">
-      <section class="card dashboard reveal" id="dashboard"></section>
-    </aside>
-  </div>
-
-  <section class="bids-section reveal">
-    <div class="section-head"><span>Open bids</span></div>
-    <div id="openBids" class="bids-list"></div>
-  </section>
-
-  <section class="bids-section reveal">
-    <div class="section-head"><span>In progress</span></div>
-    <div id="progressBids" class="bids-list"></div>
-  </section>
-
-  <section class="history-section reveal">
-    <div class="section-head"><span>Paid &amp; done</span></div>
-    <div id="historyList" class="history-list"></div>
-  </section>
+  <section class="services reveal" id="services"></section>
 </main>
 
 <div class="overlay" id="authOverlay">
@@ -92,8 +52,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase.js?v=13"></script>
-<script src="config.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="supabase.js?v=14"></script>
+<script src="core.js?v=14"></script>
+<script src="hub.js?v=14"></script>
 </body>
 </html>

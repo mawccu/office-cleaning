@@ -784,3 +784,75 @@ main {
   border-radius: var(--r-sm); padding: 9px 12px; margin: 0 0 12px;
 }
 .invite-banner b { color: var(--good); }
+
+/* ============================================================
+   The Office — shared nav + hub
+   ============================================================ */
+.brand { text-decoration: none; color: inherit; }
+.mainnav { display: flex; align-items: center; gap: 2px; margin-left: 6px; flex-wrap: wrap; }
+.navlink {
+  text-decoration: none; color: var(--muted);
+  font-size: 14px; font-weight: 600;
+  padding: 7px 12px; border-radius: 10px;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: color .14s ease, background .14s ease;
+}
+.navlink:hover, .navlink.active { color: var(--text); background: var(--surface-2); }
+.navlink.soon { color: var(--muted-2); cursor: default; }
+.navlink.soon:hover { background: none; color: var(--muted-2); }
+.whoami { margin-left: auto; }
+.soon-pill {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--gold); background: rgba(246, 200, 96, .14); border: 1px solid rgba(246, 200, 96, .28);
+  border-radius: 999px; padding: 1px 6px;
+}
+
+/* stats now live in the cleaning intro, not the top bar */
+.intro-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.intro-stats { display: flex; gap: 10px; }
+
+/* hub landing */
+.hub-hero { padding: 48px 4px 10px; }
+.activity-strip {
+  margin-top: 22px; display: inline-flex; align-items: center; gap: 9px;
+  font-size: 13.5px; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 999px; padding: 9px 16px;
+}
+.activity-strip b { color: var(--text); font-weight: 600; }
+.pulse {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 0 0 rgba(55, 214, 122, .5); animation: pulse 2.2s infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(55, 214, 122, .5); }
+  70% { box-shadow: 0 0 0 8px rgba(55, 214, 122, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(55, 214, 122, 0); }
+}
+
+.services {
+  margin-top: 30px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 18px;
+}
+.svc-card {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 22px; border-radius: var(--r); min-height: 176px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow); text-decoration: none; color: inherit;
+  transition: transform .16s ease, border-color .16s ease;
+}
+.svc-card.live:hover { transform: translateY(-3px); border-color: var(--border-strong); }
+.svc-card.soon { opacity: .6; }
+.svc-ico {
+  width: 46px; height: 46px; display: grid; place-items: center;
+  font-size: 24px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.svc-body { flex: 1; }
+.svc-title {
+  font-family: "Space Grotesk", sans-serif; font-weight: 700; font-size: 17px;
+  display: flex; align-items: center; gap: 8px;
+}
+.svc-blurb { margin-top: 6px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.svc-live { margin-top: 10px; font-size: 12.5px; color: var(--gold); font-weight: 600; min-height: 16px; }
+.svc-go { font-size: 13px; font-weight: 600; color: var(--gold); }

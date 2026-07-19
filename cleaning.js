@@ -1,13 +1,13 @@
 /* ============================================================
-   Cleaning Bids board.
+   Cleaning board — one service of The Office.
 
-   Identity: sign in with a name + PIN (remembered on the device, so you
-   don't sign in again). All writes go through PIN-checked Supabase RPCs.
+   Shared foundation (identity, sign-in, callRpc, toasts, formatting
+   helpers, the top nav) lives in core.js and loads before this file.
 
    A BID is one posting: bidder + amount + a set of rooms + optional
    deadline. It moves through a lifecycle:
        open  ->  claimed  ->  cleaned  ->  paid
-   - anyone claims an open bid (they'll clean those rooms),
+   - a cleaner claims an open bid (or underbids to win it),
    - the claimer marks it cleaned,
    - the bidder marks it paid (closes the loop).
    Bidders can edit/cancel their own open bids; claimers can un-claim.
@@ -27,8 +27,6 @@ const selectedTasks = new Set();  // task ids checked for the bid being composed
 let bidAmount = "";               // composer fields kept across re-renders
 let bidDue = "";
 let bidNote = "";
-let auth = null;                  // { name, pin } — remembered login
-let pendingAfterAuth = null;      // action to retry once signed in
 
 // ---- DOM ----
 const floorPlanWrapEl = document.getElementById("floorPlanWrap");
@@ -38,37 +36,11 @@ const presetsEl = document.getElementById("presets");
 const openBidsEl = document.getElementById("openBids");
 const progressBidsEl = document.getElementById("progressBids");
 const historyListEl = document.getElementById("historyList");
-const toastEl = document.getElementById("toast");
-const whoamiEl = document.getElementById("whoami");
 const statTotalEl = document.getElementById("statTotal");
 const statAreasEl = document.getElementById("statAreas");
 const selHintEl = document.getElementById("selHint");
-const authOverlay = document.getElementById("authOverlay");
-const authName = document.getElementById("authName");
-const authPin = document.getElementById("authPin");
-const authErr = document.getElementById("authErr");
-const authSubmit = document.getElementById("authSubmit");
-const authCancel = document.getElementById("authCancel");
 
-// ---- helpers ----
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (m) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
-}
-const CURRENCY = "JD";
-function money(n) { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(2); }
-function fmtMoney(n) { return `${money(n)} ${CURRENCY}`; }
-function fmtDate(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  return d.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
-// "in 3h" / "3h ago" style short relative span
-function relShort(iso) {
-  const abs = Math.abs(new Date(iso) - Date.now());
-  const m = Math.round(abs / 60000), h = Math.round(abs / 3600000), d = Math.round(abs / 86400000);
-  return m < 60 ? `${m}m` : h < 48 ? `${h}h` : `${d}d`;
-}
+// ---- cleaning-specific helpers (shared formatting lives in core.js) ----
 function duePill(iso) {
   if (!iso) return "";
   const overdue = new Date(iso) - Date.now() < 0;
@@ -99,14 +71,6 @@ function openBidsCoveringRoom(officeId, roomId) {
 function roomOffered(officeId, roomId) {
   return openBidsCoveringRoom(officeId, roomId).reduce((s, b) => s + Number(b.amount), 0);
 }
-function initials(name) {
-  const p = String(name).trim().split(/\s+/);
-  const s = ((p[0]?.[0] || "") + (p[1]?.[0] || "")).toUpperCase();
-  return s || String(name).slice(0, 2).toUpperCase() || "?";
-}
-function hashHue(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; }
-function emptyBlock(msg) { return `<div class="empty-block">${esc(msg)}</div>`; }
-
 // ---- helpers / payment split ----
 function helpersFor(bidId) { return helpers.filter((h) => h.bid_id === bidId); }
 function acceptedHelpers(bidId) { return helpersFor(bidId).filter((h) => h.status === "accepted"); }
@@ -120,14 +84,6 @@ function splitInfo(b) {
 }
 // Is this open job undercut below its posted price?
 function isUndercut(b) { return Number(b.amount) < Number(b.posted_amount); }
-
-let toastTimer = null;
-function toast(msg) {
-  toastEl.textContent = msg;
-  toastEl.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3400);
-}
 
 function setNumber(el, to) {
   const from = Number(el.dataset.val || 0);
@@ -143,68 +99,6 @@ function setNumber(el, to) {
     if (k < 1) requestAnimationFrame(frame); else el.textContent = fmtMoney(to);
   }
   requestAnimationFrame(frame);
-}
-
-/* ============================================================
-   Auth (name + PIN, remembered in localStorage)
-   ============================================================ */
-function loadAuth() { try { auth = JSON.parse(localStorage.getItem("cb_auth") || "null"); } catch { auth = null; } }
-function saveAuth(a) { auth = a; localStorage.setItem("cb_auth", JSON.stringify(a)); updateWhoami(); }
-function clearAuth() { auth = null; localStorage.removeItem("cb_auth"); updateWhoami(); render(); }
-
-function openAuth() {
-  authErr.textContent = "";
-  authName.value = auth?.name || "";
-  authPin.value = "";
-  authOverlay.classList.add("open");
-  setTimeout(() => (auth?.name ? authPin : authName).focus(), 30);
-}
-function closeAuth() { authOverlay.classList.remove("open"); }
-
-async function submitAuth() {
-  const name = authName.value.trim(), pin = authPin.value.trim();
-  if (!name) { authErr.textContent = "Enter your name"; return; }
-  if (pin.length < 4) { authErr.textContent = "PIN must be at least 4 digits"; return; }
-  authSubmit.disabled = true;
-  try {
-    const { error } = await sb.rpc("auth_user", { p_name: name, p_pin: pin });
-    if (error) throw error;
-    saveAuth({ name, pin });
-    closeAuth();
-    await reload();
-    if (pendingAfterAuth) { const a = pendingAfterAuth; pendingAfterAuth = null; a(); }
-  } catch (e) {
-    authErr.textContent = e.message || String(e);
-  } finally {
-    authSubmit.disabled = false;
-  }
-}
-
-// Ensures we're signed in before an action; if not, opens the modal and
-// remembers what to do next.
-function requireAuth(retry) {
-  if (auth) return true;
-  pendingAfterAuth = retry || null;
-  openAuth();
-  return false;
-}
-
-// Every write goes through here: attaches name+pin, handles errors,
-// re-syncs. Returns true on success.
-async function callRpc(fn, params, okMsg) {
-  if (!requireAuth()) return false;
-  try {
-    const { error } = await sb.rpc(fn, { p_name: auth.name, p_pin: auth.pin, ...params });
-    if (error) throw error;
-    if (okMsg) toast(okMsg);
-    await reload();
-    return true;
-  } catch (e) {
-    const msg = e.message || String(e);
-    toast(msg);
-    if (/name or pin|taken with a different pin/i.test(msg)) { clearAuth(); openAuth(); }
-    return false;
-  }
 }
 
 /* ============================================================
@@ -658,9 +552,8 @@ function wireBidActions() {
 }
 
 /* ============================================================
-   Bid cards
+   Bid cards  (avatarHtml lives in core.js)
    ============================================================ */
-function avatarHtml(name) { return `<div class="bid-avatar" style="--h:${hashHue(name)}">${esc(initials(name))}</div>`; }
 
 function openCard(b) {
   const mine = auth && b.bidder_name === auth.name;
@@ -848,23 +741,6 @@ function subscribeRealtime() {
     .on("postgres_changes", { event: "*", schema: "public", table: "helpers" }, reload)
     .subscribe();
 }
-function updateWhoami() {
-  if (auth) {
-    whoamiEl.innerHTML = `<span class="whoami-name">You <b>${esc(auth.name)}</b></span><button id="signOutBtn" class="linkbtn">sign out</button>`;
-    document.getElementById("signOutBtn").addEventListener("click", clearAuth);
-  } else {
-    whoamiEl.innerHTML = `<button id="signInBtn" class="linkbtn strong">Sign in</button>`;
-    document.getElementById("signInBtn").addEventListener("click", openAuth);
-  }
-}
-
-// ---- wire auth modal ----
-authSubmit.addEventListener("click", submitAuth);
-authCancel.addEventListener("click", () => { pendingAfterAuth = null; closeAuth(); });
-authPin.addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
-authName.addEventListener("keydown", (e) => { if (e.key === "Enter") authPin.focus(); });
-authOverlay.addEventListener("click", (e) => { if (e.target === authOverlay) { pendingAfterAuth = null; closeAuth(); } });
-
 // Keep due/overdue countdowns fresh without wiping a focused input.
 setInterval(() => {
   const a = document.activeElement;
@@ -873,15 +749,13 @@ setInterval(() => {
 }, 45000);
 
 // ---- boot ----
-loadAuth();
-updateWhoami();
+// Identity is already loaded/validated by core.js. Wire the shared hooks
+// so sign-in and every write re-fetch this board, then render + subscribe.
+renderNav("cleaning");
+onAuthChange = render;
+afterWrite = reload;
 render();
 (async () => {
-  if (auth) {
-    // validate the remembered login (PIN may have been changed elsewhere)
-    const { error } = await sb.rpc("auth_user", { p_name: auth.name, p_pin: auth.pin });
-    if (error) { clearAuth(); }
-  }
   await reload();
   subscribeRealtime();
 })();
